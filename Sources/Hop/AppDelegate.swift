@@ -6,6 +6,7 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: AppModel!
     private var launcher: Launcher!
+    private var switcher: SwitchController!
     private var menu: MenuController!
     private var editWindow: EditAccountsWindow!
     private let hotkeys = Hotkeys()
@@ -15,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let (accounts, recovered) = AccountStore.loadOrSeed(from: fileURL, home: NSHomeDirectory())
         model = AppModel(accounts: accounts, fileURL: fileURL)
         launcher = Launcher(model: model)
+        switcher = SwitchController(model: model)
+        switcher.onChange = { [unowned self] in self.menu.rebuild() }
         editWindow = EditAccountsWindow(model: model)
         menu = MenuController(model: model, actions: MenuActions(
             open: { [unowned self] in self.launcher.open($0) },
