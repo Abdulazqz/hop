@@ -24,11 +24,16 @@ Turn on **Launch at login** from its menu.
 
 ## Use
 
-- Click an account to open it, or bring it to the front if it's already open.
-- Hold ⌥ to turn each row into **Quit <name>**.
-- ⌃⌥1 … ⌃⌥9 jump to accounts by position.
+- The line at the top of the menu shows the active terminal account, and below it how many terminal sessions are running.
+- The menu-bar icon is a filled circle in the active account's color, and a plain gray icon when no account is active.
+- Each account row opens a submenu:
+  - **Switch terminal login** makes it the terminal account. The item reads **Active** when it already is, and **Log in first…** when Hop has no saved login for it yet.
+  - **Open Terminal** switches if needed and opens a Terminal window running `claude`.
+  - **Open Claude app** starts the desktop app for that account, or **Bring Claude app to front** when it's already running. Hold ⌥ to turn it into **Quit Claude app**.
+- **Save current login (…) as new account…** appears when Terminal is logged in as an account Hop hasn't saved.
+- **Hotkeys** chooses what ⌃⌥1 … ⌃⌥9 do for the accounts by position: Off, Switch login, Open Claude app (the default), or Open Terminal.
 - **Add account…** makes a new profile folder and opens Claude in it so you can sign in.
-- **Edit accounts…** renames, recolors, reorders, and removes accounts.
+- **Edit accounts…** renames, recolors, reorders, and removes accounts. Removing an account also deletes its saved terminal login.
 - Quitting Hop leaves your Claude windows open.
 - The first time it brings a window forward, macOS may ask to let Hop control System Events. Allow it.
 - macOS remembers the permissions it asks for as long as Hop keeps the same signing identity. `build.sh` uses your Apple Development identity when Xcode has one; if it has to sign ad hoc it says so, and macOS will ask again after each rebuild.
@@ -62,8 +67,8 @@ only when you switch, save, or forget a login, never just to draw the menu.
 A saved login lasts as long as its refresh token, about four weeks. Rows warn
 seven days before. Log in as that account once to renew it.
 
-**Hotkeys** in the menu chooses what ⌃⌥1…9 do: nothing, switch the login, open
-the Claude app (the default), or open Terminal.
+Accounts that use a separate `CLAUDE_CONFIG_DIR` are not supported; Hop manages
+the default login only.
 
 ## Troubleshooting
 
@@ -86,11 +91,12 @@ hop status      # accounts, with * on the active terminal login
 hop switch 2    # make account 2 the terminal login
 hop open 3      # open the desktop app for account 3
 hop quit 3
+hop probe-login   # what Hop sees in Claude Code's login, no secrets
 ```
 
 `./build.sh --install` links `hop` into `~/bin` when that folder exists; otherwise use the full path under `~/Applications/Hop.app/Contents/MacOS/Hop`.
 
-`open` is for accounts that aren't running. To switch to one that's already running, use the menu or its hotkey.
+`open` starts the desktop app for an account that isn't running; use the menu to bring a running one forward. `switch` changes the terminal login.
 
 ## Develop
 
