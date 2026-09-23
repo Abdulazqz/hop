@@ -31,7 +31,7 @@ Turn on **Launch at login** from its menu.
 - **Edit accounts…** renames, recolors, reorders, and removes accounts.
 - Quitting Hop leaves your Claude windows open.
 - The first time it brings a window forward, macOS may ask to let Hop control System Events. Allow it.
-- Each `./build.sh --install` re-signs the app, so macOS may ask for those permissions again.
+- macOS remembers the permissions it asks for as long as Hop keeps the same signing identity. `build.sh` uses your Apple Development identity when Xcode has one; if it has to sign ad hoc it says so, and macOS will ask again after each rebuild.
 
 Accounts are stored in `~/Library/Application Support/Hop/accounts.json`.
 
