@@ -33,7 +33,9 @@ final class KeychainLoginStore: LoginStore {
         let status = SecItemCopyMatching(q as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess else { throw KeychainError(status: status) }
-        return result as? Data
+        // An item that exists but yields no data must not read as "missing": rollback would then delete it.
+        guard let data = result as? Data else { throw KeychainError(status: errSecDecode) }
+        return data
     }
 
     private func write(_ data: Data, service: String, account: String) throws {

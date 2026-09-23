@@ -13,9 +13,15 @@ enum CLI {
         let launcher = Launcher(model: model) { title, info in print("error: \(title). \(info)") }
 
         if args[0] == "probe-login" {
-            // Read-only. Prints what Hop can see, never a token.
-            let live = LiveLogin.parse(keychainValue: try? KeychainLoginStore().readLive(),
-                                       identityDocument: try? IdentityDocumentFile().read())
+            // Read-only. Prints what Hop can see, never a token. A read error is reported, not shown as "logged out".
+            let live: LiveLoginState
+            do {
+                live = LiveLogin.parse(keychainValue: try KeychainLoginStore().readLive(),
+                                       identityDocument: try IdentityDocumentFile().read())
+            } catch {
+                print("error: \(error.localizedDescription)")
+                return 1
+            }
             switch live {
             case .loggedIn(let s): print("logged in as \(s.email); login expires \(s.expiresAt); refresh expires \(s.refreshTokenExpiresAt)")
             case .loggedOut: print("logged out")
