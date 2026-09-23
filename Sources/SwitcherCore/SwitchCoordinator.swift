@@ -4,6 +4,8 @@ public protocol LoginStore {
     /// Claude Code's own item; nil when it doesn't exist.
     func readLive() throws -> Data?
     func writeLive(_ value: Data) throws
+    /// Removes Claude Code's item; used only to undo a write Hop just made.
+    func deleteLive() throws
     func readSaved(_ accountID: UUID) throws -> Data?
     func writeSaved(_ value: Data, for accountID: UUID) throws
     func deleteSaved(_ accountID: UUID) throws
@@ -97,7 +99,7 @@ public struct SwitchCoordinator {
         do {
             try identityDocument.write(newDocument)
         } catch {
-            if let liveValue { try? logins.writeLive(liveValue) }
+            if let liveValue { try? logins.writeLive(liveValue) } else { try? logins.deleteLive() }
             throw SwitchError.rolledBack(error.localizedDescription)
         }
         let newState = HopState(activeAccountID: targetID, writtenRefreshTokenSHA256: saved.refreshTokenSHA256)

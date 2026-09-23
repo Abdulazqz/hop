@@ -54,7 +54,7 @@ final class SwitchCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.accounts, [work, play])
     }
 
-    func testAlreadyActiveWritesNothing() throws {
+    func testAlreadyActiveTouchesNeitherKeychainNorIdentity() throws {
         setLive(email: "work@example.com", refresh: "rt-work")
         try save(work, refresh: "rt-old")
         XCTAssertThrowsError(try coordinator.switchTo(work.id, accounts: [work, play], state: .empty) { _ in nil }) {
@@ -159,6 +159,18 @@ final class SwitchCoordinatorTests: XCTestCase {
         }
         XCTAssertEqual(logins.live, before)
         XCTAssertEqual(logins.liveWrites.count, 2, "target write then restore")
+    }
+
+    func testIdentityWriteFailureWhenLoggedOutRemovesKeychainItem() throws {
+        logins.live = nil
+        identity.document = LoginFixtures.identityDocument(email: nil)
+        try save(play, refresh: "rt-play")
+        identity.failWrite = true
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }) {
+            guard case .rolledBack = $0 as? SwitchError else { return XCTFail("\($0)") }
+        }
+        XCTAssertNil(logins.live, "the item Hop created must be removed again")
+        XCTAssertEqual(logins.liveDeletes, 1)
     }
 
     func testSaveCurrentLoginWithoutSwitching() throws {
