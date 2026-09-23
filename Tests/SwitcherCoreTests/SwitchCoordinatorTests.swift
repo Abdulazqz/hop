@@ -118,6 +118,28 @@ final class SwitchCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.from, bare.id)
     }
 
+    func testAttachingToTheTargetIsRefusedAndKeepsItsLogin() throws {
+        setLive(email: "new@example.com", refresh: "rt-new")
+        try save(play, refresh: "rt-play")
+        let before = logins.saved[play.id]
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in .attach(play.id) }) {
+            XCTAssertEqual($0 as? SwitchError, .attachTargetHasLogin("Play"))
+        }
+        XCTAssertEqual(logins.saved[play.id], before, "the target's saved login must be untouched")
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+        XCTAssertEqual(identity.writes, 0)
+    }
+
+    func testAttachingToAnAccountWithAnEmailIsRefused() throws {
+        setLive(email: "new@example.com", refresh: "rt-new")
+        try save(play, refresh: "rt-play")
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in .attach(work.id) }) {
+            XCTAssertEqual($0 as? SwitchError, .attachTargetHasLogin("Work"))
+        }
+        XCTAssertNil(logins.saved[work.id])
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+    }
+
     func testLoggedOutSkipsCapture() throws {
         logins.live = nil
         identity.document = LoginFixtures.identityDocument(email: nil)

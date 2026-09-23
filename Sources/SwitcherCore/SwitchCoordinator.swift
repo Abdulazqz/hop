@@ -28,6 +28,7 @@ public enum SwitchError: Error, Equatable, LocalizedError {
     case targetLoginExpired(name: String, on: Date)
     case alreadyActive(String)
     case cancelled(email: String)
+    case attachTargetHasLogin(String)
     case store(String)
     case rolledBack(String)
 
@@ -39,6 +40,7 @@ public enum SwitchError: Error, Equatable, LocalizedError {
             "\(name)'s saved login expired on \(on.formatted(date: .abbreviated, time: .omitted)). Log in as it once in Terminal."
         case .alreadyActive(let name): "\(name) is already the active account."
         case .cancelled(let email): "The current login (\(email)) isn't saved. Save it first, or the switch would lose it."
+        case .attachTargetHasLogin(let name): "\(name) already has a saved login. Pick an account without one, or create a new account."
         case .store(let why): why
         case .rolledBack(let why): "Couldn't finish the switch (\(why)). The previous login was restored."
         }
@@ -160,6 +162,9 @@ public struct SwitchCoordinator {
             switch resolveUnknown(email) {
             case .attach(let id)?:
                 guard let index = accounts.firstIndex(where: { $0.id == id }) else { throw SwitchError.store("unknown account") }
+                if try accounts[index].email != nil || logins.readSaved(id) != nil {
+                    throw SwitchError.attachTargetHasLogin(accounts[index].name)
+                }
                 accounts[index].email = email
                 outgoingID = id
             case .create?:
