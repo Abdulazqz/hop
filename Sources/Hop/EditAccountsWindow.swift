@@ -113,7 +113,10 @@ private struct EditAccountsView: View {
                 guard let account = forgetPending else { return }
                 do {
                     try switcher.forgetSavedLogin(account)
-                    if let index = accounts.firstIndex(where: { $0.id == account.id }) { accounts[index].email = nil }
+                    if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+                        accounts[index].email = nil
+                        accounts[index].savedLoginExpiresAt = nil
+                    }
                 } catch {
                     self.error = error.localizedDescription
                 }

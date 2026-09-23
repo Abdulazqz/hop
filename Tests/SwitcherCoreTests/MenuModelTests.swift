@@ -73,10 +73,23 @@ final class MenuModelTests: XCTestCase {
         let soon = now.addingTimeInterval(3 * 86_400 + 60)
         let far = now.addingTimeInterval(30 * 86_400)
         let gone = now.addingTimeInterval(-60)
-        let model = build(live: .loggedOut, expiry: [work.id: soon, play.id: far, bare.id: gone])
+        let model = build(live: .loggedOut, expiry: [work.id: soon, play.id: far, bare.id: gone], saved: [work.id, play.id, bare.id])
         XCTAssertEqual(model.rows[0].title, "Work · login expires in 3 days")
         XCTAssertEqual(model.rows[1].title, "Play")
         XCTAssertEqual(model.rows[2].title, "Bare · login expired")
+    }
+
+    func testExpirySuffixNeedsASavedLogin() {
+        let soon = now.addingTimeInterval(3 * 86_400 + 60)
+        let model = build(live: .loggedOut, expiry: [bare.id: soon], saved: [work.id, play.id])
+        XCTAssertEqual(model.rows[2].title, "Bare")
+    }
+
+    func testIdentityOnlySummaryIgnoresTheStateHash() {
+        let state = HopState(activeAccountID: work.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt"))
+        let identityOnly = LiveLoginState.loggedIn(LoginSummary(email: "play@example.com", refreshTokenSHA256: "",
+                                                                expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture))
+        XCTAssertEqual(build(live: identityOnly, state: state).activeAccountID, play.id)
     }
 
     func testHintsFollowHotkeySetting() {

@@ -51,7 +51,7 @@ public struct MenuModel: Equatable {
             let saved = hasSavedLogin.contains(account.id)
             return MenuRow(
                 accountID: account.id,
-                title: account.name + expirySuffix(savedLoginExpiry[account.id], now: now),
+                title: account.name + (saved ? expirySuffix(savedLoginExpiry[account.id], now: now) : ""),
                 hint: hotkeyAction != .off && hotkeyPositions.contains(position) ? "⌃⌥\(position + 1)" : nil,
                 isActive: isActive,
                 desktopRunning: running,

@@ -96,6 +96,7 @@ final class MenuController: NSObject, NSMenuDelegate {
     /// One account row: color dot, checkmark when active, and a submenu with the three actions.
     private func accountItem(_ account: Account, row: MenuRow) -> NSMenuItem {
         let dot = Dot.image(color: account.color.nsColor, filled: row.desktopRunning)
+        dot.accessibilityDescription = row.desktopRunning ? "Running" : "Closed"
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
         item.attributedTitle = Self.title(row.title, hint: row.hint)
         item.image = dot
