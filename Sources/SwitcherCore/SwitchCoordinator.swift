@@ -42,7 +42,7 @@ public enum SwitchError: Error, Equatable, LocalizedError {
         case .cancelled(let email): "The current login (\(email)) isn't saved. Save it first, or the switch would lose it."
         case .attachTargetHasLogin(let name): "\(name) already has a saved login. Pick an account without one, or create a new account."
         case .store(let why): why
-        case .rolledBack(let why): "Couldn't finish the switch (\(why)). The previous login was restored."
+        case .rolledBack(let message): message
         }
     }
 }
@@ -91,7 +91,13 @@ public struct SwitchCoordinator {
                                                         accounts: accounts, state: state, resolveUnknown: resolveUnknown)
             accounts = updated
             from = outgoingID
-            if outgoingID == targetID { throw SwitchError.alreadyActive(target.name) }
+            if outgoingID == targetID {
+                // A stale session may have rewritten the identity file; put back the one saved for this account.
+                if let savedEmail = saved.email, savedEmail.lowercased() != summary.email.lowercased() {
+                    try identityDocument.write(IdentityDocument.replacingIdentity(in: document, with: saved.identity))
+                }
+                throw SwitchError.alreadyActive(target.name)
+            }
         }
 
         // 4. Write: Keychain, then identity; undo the Keychain if the identity write fails.
@@ -101,8 +107,12 @@ public struct SwitchCoordinator {
         do {
             try identityDocument.write(newDocument)
         } catch {
-            if let liveValue { try? logins.writeLive(liveValue) } else { try? logins.deleteLive() }
-            throw SwitchError.rolledBack(error.localizedDescription)
+            do {
+                if let liveValue { try logins.writeLive(liveValue) } else { try logins.deleteLive() }
+            } catch let restoreError {
+                throw SwitchError.rolledBack("Couldn't finish the switch (\(error.localizedDescription)), and restoring the previous login also failed (\(restoreError.localizedDescription)).")
+            }
+            throw SwitchError.rolledBack("Couldn't finish the switch (\(error.localizedDescription)). The previous login was restored.")
         }
         let newState = HopState(activeAccountID: targetID, writtenRefreshTokenSHA256: saved.refreshTokenSHA256)
         return SwitchResult(from: from, to: targetID, accounts: accounts, state: newState)
@@ -138,15 +148,18 @@ public struct SwitchCoordinator {
         let section = try LiveLogin.loginSection(of: liveValue)
         var identity = try IdentityDocument.identity(of: document) ?? Data("{}".utf8)
         let outgoingID: UUID
-        switch LoginAttribution.attribute(summary, accounts: accounts, state: state) {
-        case .hopWrote(let id):
-            outgoingID = id
+        var attribution = LoginAttribution.attribute(summary, accounts: accounts, state: state)
+        if case .hopWrote(let id) = attribution {
             // A stale session may have rewritten the identity file; prefer the identity we saved for this account.
-            if let data = try logins.readSaved(id), let previous = try? SavedLogin.decode(data),
-               previous.email?.lowercased() != summary.email.lowercased() {
-                identity = previous.identity
+            // Without a readable saved item (it was forgotten) the hash proves nothing: attribute by email instead.
+            if let data = try logins.readSaved(id), let previous = try? SavedLogin.decode(data) {
+                if previous.email?.lowercased() != summary.email.lowercased() { identity = previous.identity }
+            } else {
+                attribution = LoginAttribution.attribute(summary, accounts: accounts, state: .empty)
             }
-        case .emailMatch(let id):
+        }
+        switch attribution {
+        case .hopWrote(let id), .emailMatch(let id):
             outgoingID = id
         case .unknown(let email):
             switch resolveUnknown(email) {

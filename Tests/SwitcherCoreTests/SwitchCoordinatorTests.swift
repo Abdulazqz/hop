@@ -216,6 +216,90 @@ final class SwitchCoordinatorTests: XCTestCase {
         XCTAssertNil(result.accounts[1].savedLoginExpiresAt, "the target's expiry is recorded only when it is captured")
     }
 
+    func testSwitchingToTheDisplayedAccountAfterAKeychainWipeRestoresItsLogin() throws {
+        // Claude Code wiped its item; ~/.claude.json still names Work.
+        logins.live = LoginFixtures.keychainValue(access: "", refresh: "", expiresAt: 0)
+        identity.document = LoginFixtures.identityDocument(email: "work@example.com")
+        try save(work, refresh: "rt-work")
+        let result = try coordinator.switchTo(work.id, accounts: [work, play], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertNil(result.from)
+        let live = LoginFixtures.json(try XCTUnwrap(logins.live))
+        XCTAssertEqual((live["claudeAiOauth"] as? [String: Any])?["refreshToken"] as? String, "rt-work")
+    }
+
+    func testSwitchingToTheActiveAccountRepairsARewrittenIdentity() throws {
+        // Hop wrote Work's token; a stale session then rewrote the identity file as Play.
+        setLive(email: "play@example.com", refresh: "rt-work")
+        try save(work, refresh: "rt-work")
+        let state = HopState(activeAccountID: work.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt-work"))
+        XCTAssertThrowsError(try coordinator.switchTo(work.id, accounts: [work, play], state: state) { _ in nil }) {
+            XCTAssertEqual($0 as? SwitchError, .alreadyActive("Work"))
+        }
+        let doc = LoginFixtures.json(try XCTUnwrap(identity.document))
+        XCTAssertEqual((doc["oauthAccount"] as? [String: Any])?["emailAddress"] as? String, "work@example.com")
+        XCTAssertEqual(doc["numStartups"] as? Int, 7, "only oauthAccount is replaced")
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+    }
+
+    func testHopWroteWithoutASavedItemFallsBackToEmail() throws {
+        // State says Hop wrote Work, but Work's saved item is gone (forgotten); the live login is Play's by email.
+        setLive(email: "play@example.com", refresh: "rt-x")
+        let state = HopState(activeAccountID: work.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt-x"))
+        try save(play, refresh: "rt-play")
+        let third = Account(name: "Third", color: .gray, folder: "~/t", email: "third@example.com")
+        try save(third, refresh: "rt-third")
+        let result = try coordinator.switchTo(third.id, accounts: [work, play, third], state: state) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, play.id)
+        XCTAssertEqual(result.accounts[0].email, work.email)
+        XCTAssertNil(logins.saved[work.id])
+        let savedPlay = try SavedLogin.decode(try XCTUnwrap(logins.saved[play.id]))
+        XCTAssertEqual(savedPlay.refreshTokenSHA256, LiveLogin.sha256Hex("rt-x"))
+        XCTAssertEqual(savedPlay.email, "play@example.com")
+    }
+
+    func testKeychainWriteFailureLeavesIdentityUntouched() throws {
+        setLive(email: "work@example.com", refresh: "rt-work")
+        try save(play, refresh: "rt-play")
+        logins.failLiveWrite = true
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }) {
+            guard case .store = $0 as? SwitchError else { return XCTFail("\($0)") }
+        }
+        XCTAssertEqual(identity.writes, 0)
+    }
+
+    func testRefusedTargetNeverAsksOrCaptures() throws {
+        setLive(email: "new@example.com", refresh: "rt-new")
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in
+            XCTFail("resolver must not run"); return nil
+        }) {
+            XCTAssertEqual($0 as? SwitchError, .targetHasNoLogin("Play"))
+        }
+        XCTAssertTrue(logins.saved.isEmpty)
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+    }
+
+    func testRollbackMessageSaysWhenTheRestoreAlsoFailed() throws {
+        logins.live = nil
+        identity.document = LoginFixtures.identityDocument(email: nil)
+        try save(play, refresh: "rt-play")
+        identity.failWrite = true
+        logins.failLiveDelete = true
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }) {
+            guard case .rolledBack(let message) = $0 as? SwitchError else { return XCTFail("\($0)") }
+            XCTAssertTrue(message.contains("restoring the previous login also failed"), message)
+            XCTAssertFalse(($0 as? SwitchError)?.errorDescription?.contains("was restored") ?? true)
+        }
+    }
+
+    func testRollbackMessageSaysTheRestoreSucceeded() throws {
+        setLive(email: "work@example.com", refresh: "rt-work")
+        try save(play, refresh: "rt-play")
+        identity.failWrite = true
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }) {
+            XCTAssertTrue(($0 as? SwitchError)?.errorDescription?.contains("The previous login was restored.") ?? false)
+        }
+    }
+
     func testNewAccountPicksUnusedColor() {
         let account = SwitchCoordinator.newAccount(email: "x@example.com", accounts: [work, play], home: home)
         XCTAssertEqual(account.color, .purple)

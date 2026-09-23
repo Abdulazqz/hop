@@ -56,23 +56,47 @@ final class SwitchController {
     }
 
     /// Returns true when the account is now active (was already, or the switch succeeded).
+    /// Always runs the coordinator, even when the menu already shows the account as active, so a wiped
+    /// Keychain item or a rewritten identity file gets repaired.
     @discardableResult
     func switchTo(_ account: Account) -> Bool {
         guard !loginFormatBroken else { reportError(SwitchError.unrecognizedLogin("see the earlier alert")); return false }
         refreshLive()
-        if activeAccountID == account.id { return true }
+        // First pass never blocks: an unknown login comes back as .cancelled, so ~/.claude.json isn't held
+        // across the dialog. The second pass re-reads everything with the user's answer.
         do {
-            let result = try coordinator.switchTo(account.id, accounts: model.accounts, state: state) { [self] email in
-                UnknownLoginDialog.ask(email: email, candidates: model.accounts.filter { $0.email == nil })
+            return try attemptSwitch(to: account) { _ in nil }
+        } catch SwitchError.cancelled(let email) {
+            guard let choice = UnknownLoginDialog.ask(email: email, candidates: model.accounts.filter { $0.email == nil }) else {
+                return false
             }
-            try persist(accounts: result.accounts, state: result.state)
-            return true
+            do {
+                return try attemptSwitch(to: account) { _ in choice }
+            } catch {
+                return switchFailed(error)
+            }
         } catch {
-            reportError(error)
+            return switchFailed(error)
+        }
+    }
+
+    /// One coordinator run: persists on success; "already active" counts as success.
+    private func attemptSwitch(to account: Account, resolveUnknown: (String) -> UnknownLoginChoice?) throws -> Bool {
+        do {
+            let result = try coordinator.switchTo(account.id, accounts: model.accounts, state: state, resolveUnknown: resolveUnknown)
+            try persist(accounts: result.accounts, state: result.state)
+        } catch SwitchError.alreadyActive {
             refreshLive()
             onChange?()
-            return false
         }
+        return true
+    }
+
+    private func switchFailed(_ error: Error) -> Bool {
+        reportError(error)
+        refreshLive()
+        onChange?()
+        return false
     }
 
     func openTerminal(_ account: Account) {
@@ -106,6 +130,11 @@ final class SwitchController {
             accounts[index].savedLoginExpiresAt = nil
         }
         try model.setAccounts(accounts)
+        if state.activeAccountID == account.id {
+            // The recorded hash pointed at the login just deleted; keep it from attributing anything to this account.
+            state = .empty
+            try state.save(to: stateURL)
+        }
         onChange?()
     }
 
