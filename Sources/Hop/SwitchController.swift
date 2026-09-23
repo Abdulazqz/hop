@@ -2,6 +2,8 @@ import AppKit
 import SwitcherCore
 
 /// Glues SwitchCoordinator to the model, the stores, alerts, and Terminal.
+/// Reads the Keychain only inside switchTo, saveCurrentLogin, forgetSavedLogin and deleteSavedLogins;
+/// everything shown in the menu comes from ~/.claude.json and the accounts file.
 @MainActor
 final class SwitchController {
     private let model: AppModel
@@ -31,9 +33,7 @@ final class SwitchController {
     }
 
     func refreshLive() {
-        let value = try? logins.readLive()
-        let document = try? identityDocument.read()
-        live = LiveLogin.parse(keychainValue: value, identityDocument: document)
+        live = LiveLogin.parseIdentityOnly(identityDocument: try? identityDocument.read())
         if case .unrecognized = live, !loginFormatBroken {
             loginFormatBroken = true
             reportError(SwitchError.unrecognizedLogin(reason(of: live)))
@@ -45,12 +45,12 @@ final class SwitchController {
         return LoginAttribution.attribute(summary, accounts: model.accounts, state: state).accountID
     }
 
-    func hasSavedLogin(_ id: UUID) -> Bool { (try? logins.readSaved(id)) != nil }
+    func hasSavedLogin(_ id: UUID) -> Bool { model.accounts.first { $0.id == id }?.email != nil }
 
     func menuModel(desktopRunning: Set<UUID>, hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
         MenuModel.build(accounts: model.accounts, live: live, state: state,
-                        savedLoginExpiry: coordinator.savedLoginExpiry(for: model.accounts),
-                        hasSavedLogin: Set(model.accounts.map(\.id).filter(hasSavedLogin)),
+                        savedLoginExpiry: Dictionary(uniqueKeysWithValues: model.accounts.compactMap { a in a.savedLoginExpiresAt.map { (a.id, $0) } }),
+                        hasSavedLogin: Set(model.accounts.filter { $0.email != nil }.map(\.id)),
                         desktopRunning: desktopRunning, runningSessions: RunningSessions.count(),
                         hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions, now: Date())
     }
@@ -101,7 +101,10 @@ final class SwitchController {
         if activeAccountID == account.id { throw SwitchError.store("\(account.name) is the active account. Switch to another account first.") }
         try logins.deleteSaved(account.id)
         var accounts = model.accounts
-        if let index = accounts.firstIndex(where: { $0.id == account.id }) { accounts[index].email = nil }
+        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+            accounts[index].email = nil
+            accounts[index].savedLoginExpiresAt = nil
+        }
         try model.setAccounts(accounts)
         onChange?()
     }

@@ -51,7 +51,9 @@ final class SwitchCoordinatorTests: XCTestCase {
         XCTAssertEqual(doc["numStartups"] as? Int, 7)
         // state records the write
         XCTAssertEqual(result.state, HopState(activeAccountID: play.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt-play")))
-        XCTAssertEqual(result.accounts, [work, play])
+        var expectedWork = work!
+        expectedWork.savedLoginExpiresAt = Date(timeIntervalSince1970: LoginFixtures.farFuture / 1000)
+        XCTAssertEqual(result.accounts, [expectedWork, play])
     }
 
     func testAlreadyActiveTouchesNeitherKeychainNorIdentity() throws {
@@ -205,9 +207,13 @@ final class SwitchCoordinatorTests: XCTestCase {
         XCTAssertNotNil(logins.saved[accounts[1].id])
     }
 
-    func testSavedLoginExpiry() throws {
-        try save(play, refresh: "rt-play", refreshExpiresAt: 5_000)
-        XCTAssertEqual(coordinator.savedLoginExpiry(for: [work, play]), [play.id: Date(timeIntervalSince1970: 5)])
+    func testCaptureRecordsSavedLoginExpiryOnTheAccount() throws {
+        setLive(email: "work@example.com", refresh: "rt-work")
+        logins.live = LoginFixtures.keychainValue(refresh: "rt-work", refreshTokenExpiresAt: 9_000)
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }
+        XCTAssertEqual(result.accounts[0].savedLoginExpiresAt, Date(timeIntervalSince1970: 9))
+        XCTAssertNil(result.accounts[1].savedLoginExpiresAt, "the target's expiry is recorded only when it is captured")
     }
 
     func testNewAccountPicksUnusedColor() {

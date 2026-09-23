@@ -58,6 +58,15 @@ public enum LiveLogin {
                                       refreshTokenExpiresAt: Date(timeIntervalSince1970: refreshExpiresAt / 1000)))
     }
 
+    /// The identity file alone, for display. No Keychain access, so no token hash and no expiry.
+    public static func parseIdentityOnly(identityDocument: Data?) -> LiveLoginState {
+        guard let identityDocument else { return .loggedOut }
+        guard let document = jsonObject(identityDocument) else { return .unrecognized("~/.claude.json isn't valid JSON") }
+        guard let identity = document[identityKey] as? [String: Any],
+              let email = identity[emailKey] as? String, !email.isEmpty else { return .loggedOut }
+        return .loggedIn(LoginSummary(email: email, refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture))
+    }
+
     public static func loginSection(of keychainValue: Data) throws -> Data {
         guard let object = jsonObject(keychainValue) else { throw LoginError.notAnObject }
         guard let login = object[loginKey] as? [String: Any] else { throw LoginError.missingLoginSection }

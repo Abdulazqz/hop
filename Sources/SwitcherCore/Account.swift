@@ -12,13 +12,17 @@ public struct Account: Codable, Equatable, Identifiable {
     public var folder: String?
     /// claude.ai identity, set once a terminal login has been captured for this account.
     public var email: String?
+    /// When the saved terminal login's refresh token expires; shown in the menu without touching the Keychain.
+    public var savedLoginExpiresAt: Date?
 
-    public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil) {
+    public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil,
+                savedLoginExpiresAt: Date? = nil) {
         self.id = id
         self.name = name
         self.color = color
         self.folder = folder
         self.email = email
+        self.savedLoginExpiresAt = savedLoginExpiresAt
     }
 
     /// Lower-cased, trimmed email for comparisons; nil when unset or blank.

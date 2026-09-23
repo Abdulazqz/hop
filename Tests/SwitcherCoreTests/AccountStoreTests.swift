@@ -79,4 +79,16 @@ final class AccountStoreTests: XCTestCase {
         try AccountStore.save([one], to: file)
         XCTAssertEqual(try AccountStore.load(from: file)[0].email, "w@example.com")
     }
+
+    func testSavedLoginExpiryRoundTripsAndIsOptional() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w", email: "w@example.com")
+        one.savedLoginExpiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try AccountStore.save([one], to: file)
+        XCTAssertEqual(try AccountStore.load(from: file)[0].savedLoginExpiresAt, Date(timeIntervalSince1970: 1_800_000_000))
+        let v2 = """
+        {"version":2,"accounts":[{"color":"teal","id":"AB280B13-F794-44B6-B1F7-C0F32F1ED5D8","name":"Old","email":"o@example.com"}]}
+        """
+        try Data(v2.utf8).write(to: file)
+        XCTAssertNil(try AccountStore.load(from: file)[0].savedLoginExpiresAt)
+    }
 }

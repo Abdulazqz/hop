@@ -85,4 +85,22 @@ final class LiveLoginTests: XCTestCase {
     func testSha256IsHexOfUTF8() {
         XCTAssertEqual(LiveLogin.sha256Hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
+
+    func testIdentityOnlyParseUsesTheEmailAndNoTokens() {
+        let state = LiveLogin.parseIdentityOnly(identityDocument: LoginFixtures.identityDocument(email: "Me@Example.com"))
+        guard case .loggedIn(let s) = state else { return XCTFail("\(state)") }
+        XCTAssertEqual(s.email, "Me@Example.com")
+        XCTAssertEqual(s.refreshTokenSHA256, "")
+    }
+
+    func testIdentityOnlyParseWithoutIdentityIsLoggedOut() {
+        XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: LoginFixtures.identityDocument(email: nil)), .loggedOut)
+        XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: nil), .loggedOut)
+    }
+
+    func testIdentityOnlyParseRejectsBrokenDocument() {
+        guard case .unrecognized = LiveLogin.parseIdentityOnly(identityDocument: Data("{broken".utf8)) else {
+            return XCTFail("expected unrecognized")
+        }
+    }
 }

@@ -121,16 +121,6 @@ public struct SwitchCoordinator {
         return (updated, HopState(activeAccountID: id, writtenRefreshTokenSHA256: summary.refreshTokenSHA256))
     }
 
-    public func savedLoginExpiry(for accounts: [Account]) -> [UUID: Date] {
-        var result: [UUID: Date] = [:]
-        for account in accounts {
-            if let data = try? logins.readSaved(account.id), let saved = try? SavedLogin.decode(data), let expiry = saved.refreshTokenExpiresAt {
-                result[account.id] = expiry
-            }
-        }
-        return result
-    }
-
     public static func newAccount(email: String, accounts: [Account], home: String) -> Account {
         let used = Set(accounts.map(\.color))
         let color = AccountColor.allCases.first { !used.contains($0) } ?? .gray
@@ -180,6 +170,9 @@ public struct SwitchCoordinator {
         }
         let saved = SavedLogin(loginSection: section, identity: identity, capturedAt: now())
         try logins.writeSaved(try saved.encoded(), for: outgoingID)
+        if let index = accounts.firstIndex(where: { $0.id == outgoingID }) {
+            accounts[index].savedLoginExpiresAt = saved.refreshTokenExpiresAt
+        }
         return (outgoingID, accounts)
     }
 }
