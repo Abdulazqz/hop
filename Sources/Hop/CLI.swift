@@ -4,13 +4,26 @@ import SwitcherCore
 /// `Hop status | open <n> | quit <n>` (n = 1-based menu position).
 @MainActor
 enum CLI {
-    static let commands: Set<String> = ["status", "open", "quit"]
+    static let commands: Set<String> = ["status", "open", "quit", "probe-login"]
 
     static func run(_ args: [String]) -> Int32 {
         _ = NSApplication.shared   // Focuser uses NSApp
         let (accounts, _) = AccountStore.loadOrSeed(from: AccountStore.defaultURL, home: NSHomeDirectory())
         let model = AppModel(accounts: accounts, fileURL: AccountStore.defaultURL)
         let launcher = Launcher(model: model) { title, info in print("error: \(title). \(info)") }
+
+        if args[0] == "probe-login" {
+            // Read-only. Prints what Hop can see, never a token.
+            let live = LiveLogin.parse(keychainValue: try? KeychainLoginStore().readLive(),
+                                       identityDocument: try? IdentityDocumentFile().read())
+            switch live {
+            case .loggedIn(let s): print("logged in as \(s.email); login expires \(s.expiresAt); refresh expires \(s.refreshTokenExpiresAt)")
+            case .loggedOut: print("logged out")
+            case .unrecognized(let why): print("unrecognized: \(why)")
+            }
+            print("running claude sessions: \(RunningSessions.count())")
+            return 0
+        }
 
         if args[0] == "status" {
             for (i, account) in model.accounts.enumerated() {
