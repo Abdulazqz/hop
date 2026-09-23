@@ -333,3 +333,33 @@ terminal, then switching back. A backup of `~/.claude.json` is taken first.
 A "Terminal accounts" section: what Switch does, the eight-hour note, that Hop
 never logs in, how to add an account from a fresh `/login`, the Automation
 permission, the `hop switch` command, and the expiry rule.
+
+## Revision after Task 14 (2026-09-23): Keychain access only on explicit actions
+
+**What went wrong.** The first app build read Claude Code's Keychain item at launch
+and on every menu rebuild. That item belongs to Claude Code, so macOS asks before
+Hop may read it, and because `build.sh` signed Hop ad hoc (a new identity every
+build) the "Always Allow" grant never persisted. Every reinstall produced a fresh
+password prompt, in the middle of the user's work.
+
+**Rules from here on.**
+
+1. **Display never touches the Keychain.** The menu's active account comes from
+   `~/.claude.json`'s `oauthAccount.emailAddress` alone (`LiveLogin.parseIdentityOnly`),
+   matched by email; "has a saved login" is `Account.email != nil`; the expiry shown
+   in rows comes from a new non-secret field `Account.savedLoginExpiresAt`, recorded
+   when a login is captured and cleared by Forget. The refresh-token hash is used
+   only inside the switch procedure, which reads the Keychain anyway. Known
+   limitation: if a stale session rewrites the identity file, the menu shows that
+   email as active until the next explicit switch corrects it.
+2. **Keychain reads and writes happen only on explicit user actions**: Switch,
+   Open Terminal (which switches), Save current login, Forget saved login, removing
+   an account, `hop switch`, and the diagnostic `hop probe-login`. `hop status`
+   does not read the Keychain.
+3. **Stable signing.** `build.sh` signs with an "Apple Development" identity when
+   one exists (override with `HOP_SIGN_IDENTITY`; `-` forces ad hoc) and warns when
+   it must fall back to ad hoc. With a stable identity, macOS asks about the Keychain
+   item once, and "Always Allow" holds across rebuilds.
+4. **Nothing in the build or test loop relaunches the installed app.** The one
+   install happens in the manual end-to-end step, with the user present and warned
+   about the single Keychain prompt.

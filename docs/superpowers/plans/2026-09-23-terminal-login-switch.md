@@ -2562,7 +2562,24 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: `build.sh`**
 
-Inside the `--install` block, after `cp -R "$APP" "$INSTALLED"`:
+Replace the line `codesign --force --sign - "$APP"` with a stable-identity block:
+
+```bash
+# Sign with a stable identity so macOS remembers "Always Allow" for Keychain access across rebuilds.
+# Override with HOP_SIGN_IDENTITY (a name or SHA-1 from `security find-identity -v -p codesigning`); "-" forces ad hoc.
+IDENTITY="${HOP_SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep 'Apple Development' | grep -v REVOKED | head -1 | awk '{print $2}')
+fi
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY="-"
+  echo "warning: no Apple Development identity found; signing ad hoc, so macOS will ask for Keychain access after every rebuild." >&2
+  echo "         Sign in to Xcode (Settings > Accounts) to get one, or set HOP_SIGN_IDENTITY." >&2
+fi
+codesign --force --sign "$IDENTITY" "$APP"
+```
+
+Then, inside the `--install` block, after `cp -R "$APP" "$INSTALLED"`:
 
 ```bash
   if [[ -d "$HOME/bin" ]]; then
@@ -2602,9 +2619,11 @@ login it found.
 
 **Open Terminal** switches if needed and opens a Terminal window running
 `claude`. macOS asks once to let Hop control Terminal; allow it. The first time
-Hop reads Claude Code's login, macOS also asks about the Keychain item: choose
-**Always Allow**, and again after each `./build.sh --install`, which re-signs
-the app.
+Hop switches, macOS also asks whether Hop may read Claude Code's Keychain item:
+choose **Always Allow**. `build.sh` signs Hop with your Apple Development
+identity when Xcode has one, so that answer holds across rebuilds; without one
+it signs ad hoc and macOS asks again after every rebuild. Hop reads the Keychain
+only when you switch, save, or forget a login, never just to draw the menu.
 
 A saved login lasts as long as its refresh token, about four weeks. Rows warn
 seven days before. Log in as that account once to renew it.
@@ -2628,7 +2647,7 @@ Remove the "Nothing in `/Applications`" troubleshooting paragraph's duplication 
 
 - [ ] **Step 3: Verify and commit**
 
-Run: `bash -n build.sh && ./build.sh --install | tail -3` — expected `Linked /Users/<you>/bin/hop` or the fallback line, and `hop status` works from a new shell.
+Do NOT run `./build.sh --install` (it relaunches the installed app; that happens only in Task 17 with the user present). Run: `bash -n build.sh && ./build.sh | tail -2 && codesign -dv build/Hop.app 2>&1 | grep -E "Authority|Signature"`. Expected: `Built build/Hop.app` and an `Authority=Apple Development: …` line (or `Signature=adhoc` plus the warning when no identity exists). Signing with a real identity may make macOS ask once whether `codesign` may use the key; that is expected.
 
 ```bash
 git add build.sh README.md
@@ -2696,9 +2715,134 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+### Task 18: Display without Keychain reads (revision after Task 14)
+
+Runs BEFORE Task 16 and Task 17. See the spec's "Revision after Task 14" section.
+
+**Files:**
+- Modify: `Sources/SwitcherCore/Account.swift`
+- Modify: `Sources/SwitcherCore/LiveLogin.swift`
+- Modify: `Sources/SwitcherCore/SwitchCoordinator.swift`
+- Modify: `Sources/Hop/SwitchController.swift`
+- Test: `Tests/SwitcherCoreTests/AccountStoreTests.swift`, `Tests/SwitcherCoreTests/LiveLoginTests.swift`, `Tests/SwitcherCoreTests/SwitchCoordinatorTests.swift`
+
+**Interfaces:**
+- Consumes: everything from Tasks 1–13.
+- Produces: `Account.savedLoginExpiresAt: Date?` (new optional stored property, `init` parameter defaulting to nil); `LiveLogin.parseIdentityOnly(identityDocument: Data?) -> LiveLoginState`; `SwitchCoordinator.captureLive` records the expiry on the account; `SwitchCoordinator.savedLoginExpiry(for:)` is removed; `SwitchController` no longer reads the Keychain except inside `switchTo`, `saveCurrentLogin`, `forgetSavedLogin`, `deleteSavedLogins`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `AccountStoreTests`:
+
+```swift
+    func testSavedLoginExpiryRoundTripsAndIsOptional() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w", email: "w@example.com")
+        one.savedLoginExpiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try AccountStore.save([one], to: file)
+        XCTAssertEqual(try AccountStore.load(from: file)[0].savedLoginExpiresAt, Date(timeIntervalSince1970: 1_800_000_000))
+        let v2 = """
+        {"version":2,"accounts":[{"color":"teal","id":"AB280B13-F794-44B6-B1F7-C0F32F1ED5D8","name":"Old","email":"o@example.com"}]}
+        """
+        try Data(v2.utf8).write(to: file)
+        XCTAssertNil(try AccountStore.load(from: file)[0].savedLoginExpiresAt)
+    }
+```
+
+Append to `LiveLoginTests`:
+
+```swift
+    func testIdentityOnlyParseUsesTheEmailAndNoTokens() {
+        let state = LiveLogin.parseIdentityOnly(identityDocument: LoginFixtures.identityDocument(email: "Me@Example.com"))
+        guard case .loggedIn(let s) = state else { return XCTFail("\(state)") }
+        XCTAssertEqual(s.email, "Me@Example.com")
+        XCTAssertEqual(s.refreshTokenSHA256, "")
+    }
+
+    func testIdentityOnlyParseWithoutIdentityIsLoggedOut() {
+        XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: LoginFixtures.identityDocument(email: nil)), .loggedOut)
+        XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: nil), .loggedOut)
+    }
+
+    func testIdentityOnlyParseRejectsBrokenDocument() {
+        guard case .unrecognized = LiveLogin.parseIdentityOnly(identityDocument: Data("{broken".utf8)) else {
+            return XCTFail("expected unrecognized")
+        }
+    }
+```
+
+In `SwitchCoordinatorTests`, delete `testSavedLoginExpiry` and add:
+
+```swift
+    func testCaptureRecordsSavedLoginExpiryOnTheAccount() throws {
+        setLive(email: "work@example.com", refresh: "rt-work")
+        logins.live = LoginFixtures.keychainValue(refresh: "rt-work", refreshTokenExpiresAt: 9_000)
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }
+        XCTAssertEqual(result.accounts[0].savedLoginExpiresAt, Date(timeIntervalSince1970: 9))
+        XCTAssertNil(result.accounts[1].savedLoginExpiresAt, "the target's expiry is recorded only when it is captured")
+    }
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `swift test --filter 'AccountStoreTests|LiveLoginTests|SwitchCoordinatorTests' 2>&1 | grep -E "error:" | head -5`
+Expected: errors mentioning `savedLoginExpiresAt` and `parseIdentityOnly`.
+
+- [ ] **Step 3: Implement**
+
+`Account.swift`: add `public var savedLoginExpiresAt: Date?` after `email`, with a doc comment "When the saved terminal login's refresh token expires; shown in the menu without touching the Keychain." Extend `init` with `savedLoginExpiresAt: Date? = nil` as the last parameter.
+
+`LiveLogin.swift`: add
+
+```swift
+    /// The identity file alone, for display. No Keychain access, so no token hash and no expiry.
+    public static func parseIdentityOnly(identityDocument: Data?) -> LiveLoginState {
+        guard let identityDocument else { return .loggedOut }
+        guard let document = jsonObject(identityDocument) else { return .unrecognized("~/.claude.json isn't valid JSON") }
+        guard let identity = document[identityKey] as? [String: Any],
+              let email = identity[emailKey] as? String, !email.isEmpty else { return .loggedOut }
+        return .loggedIn(LoginSummary(email: email, refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture))
+    }
+```
+
+`SwitchCoordinator.swift`: remove `savedLoginExpiry(for:)`. In `captureLive`, after `try logins.writeSaved(try saved.encoded(), for: outgoingID)`, add:
+
+```swift
+        if let index = accounts.firstIndex(where: { $0.id == outgoingID }) {
+            accounts[index].savedLoginExpiresAt = saved.refreshTokenExpiresAt
+        }
+```
+
+`SwitchController.swift`:
+- `refreshLive()` becomes `live = LiveLogin.parseIdentityOnly(identityDocument: try? identityDocument.read())` (keep the `loginFormatBroken` handling).
+- `hasSavedLogin(_ id:)` becomes `model.accounts.first { $0.id == id }?.email != nil`.
+- `menuModel(...)` passes `savedLoginExpiry: Dictionary(uniqueKeysWithValues: model.accounts.compactMap { a in a.savedLoginExpiresAt.map { (a.id, $0) } })` and `hasSavedLogin: Set(model.accounts.filter { $0.email != nil }.map(\.id))`.
+- `forgetSavedLogin` also sets `accounts[index].savedLoginExpiresAt = nil`.
+- Add a doc comment on the class: "Reads the Keychain only inside switchTo, saveCurrentLogin, forgetSavedLogin and deleteSavedLogins; everything shown in the menu comes from ~/.claude.json and the accounts file."
+
+- [ ] **Step 4: Verify without running the app**
+
+Run: `swift test 2>&1 | grep -E "warning:|error:|Executed .* tests" | tail -8` — expected `0 failures`.
+Run: `swift build -c release --product Hop 2>&1 | grep -E "error:|Build of product"` — expected complete.
+Run: `grep -n "readLive\|readSaved" Sources/Hop/SwitchController.swift` — expected: no matches (the controller never reads the Keychain directly; the coordinator does, inside explicit actions).
+Do NOT run `./build.sh`, `./build.sh --install`, or any `Hop` command.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Sources/SwitcherCore/Account.swift Sources/SwitcherCore/LiveLogin.swift Sources/SwitcherCore/SwitchCoordinator.swift Sources/Hop/SwitchController.swift Tests/SwitcherCoreTests/AccountStoreTests.swift Tests/SwitcherCoreTests/LiveLoginTests.swift Tests/SwitcherCoreTests/SwitchCoordinatorTests.swift
+git commit -m "Draw the menu without touching the Keychain
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
 ## Self-review
 
 **Spec coverage.** Account model and version 2: Task 1. Keychain item format: Task 5. State file: Task 6. Hotkey setting: Tasks 2 and 14. Reading the live login, shape check, logged-out handling: Task 3. Switch procedure steps 1 to 5, attribution rules, undo on identity failure: Tasks 7 and 8 (write order: target checked before capture so a refused switch captures nothing; the spec's step order is otherwise kept). Running sessions: Task 10. Menu layout, checkmark, icon color, Save current login, Hotkeys submenu, expiry suffix: Tasks 9 and 14. Terminal integration and Automation alert: Task 12. CLI `switch` and `status`: Task 13. Edit accounts email and Forget: Task 15. `build.sh` link and README: Task 16. Error table: unrecognized (Task 8/13), identity unreadable (Task 3 parse → unrecognized), Keychain failure with restore (Task 8), expired target (Task 8), cancel (Task 8), automation denied (Task 12/13), logged out (Task 8). Manual test: Task 17.
+
+**Revision after Task 14:** Task 18 (display without Keychain reads) runs before Tasks 16 and 17; Task 16 also switches `build.sh` to a stable signing identity; no task except Task 17 installs or launches the app.
 
 **Deviation from the spec worth knowing:** the coordinator checks the target (saved login present, not expired) *before* capturing the outgoing login, so a refused switch never writes a saved item either. The spec listed the check after capture; this ordering is strictly safer and the tests encode it.
 
