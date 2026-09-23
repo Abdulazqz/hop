@@ -18,13 +18,15 @@ final class SwitchController {
     var reportError: (Error) -> Void = { Alerts.switchFailed($0) }
 
     init(model: AppModel, logins: LoginStore = KeychainLoginStore(),
-         identityDocument: IdentityDocumentStore = IdentityDocumentFile(), stateURL: URL = HopStateFile.url) {
+         identityDocument: IdentityDocumentStore = IdentityDocumentFile(), stateURL: URL = HopStateFile.url,
+         reportError: ((Error) -> Void)? = nil) {
         self.model = model
         self.logins = logins
         self.identityDocument = identityDocument
         self.stateURL = stateURL
         self.state = HopState.load(from: stateURL)
         self.coordinator = SwitchCoordinator(logins: logins, identityDocument: identityDocument, home: NSHomeDirectory())
+        if let reportError { self.reportError = reportError }
         refreshLive()
     }
 

@@ -26,7 +26,7 @@ enum CLI {
         }
 
         if args[0] == "status" {
-            let switcher = SwitchController(model: model)
+            let switcher = SwitchController(model: model) { print("error: \($0.localizedDescription)") }
             let active = switcher.activeAccountID
             for (i, account) in model.accounts.enumerated() {
                 let app = model.tracker.running[account.id]
@@ -49,8 +49,7 @@ enum CLI {
             return 0
         }
         if args[0] == "switch" {
-            let switcher = SwitchController(model: model)
-            switcher.reportError = { print("error: \($0.localizedDescription)") }
+            let switcher = SwitchController(model: model) { print("error: \($0.localizedDescription)") }
             let live = switcher.live
             if case .loggedIn(let s) = live, switcher.activeAccountID == nil {
                 print("error: current login (\(s.email)) isn't saved; save it from the menu first")
