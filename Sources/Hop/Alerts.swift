@@ -16,6 +16,20 @@ enum Alerts {
              + "Install it from claude.ai/download, then open Hop again.")
     }
 
+    static func terminalAutomationDenied() {
+        show("Hop can't open Terminal",
+             "Allow Hop to control Terminal in System Settings › Privacy & Security › Automation, then try again.")
+    }
+
+    static func logInFirst() {
+        show("Log in, then switch once",
+             "Terminal is opening so you can run claude auth login. After you log in, switch to any other account once and Hop will save this one.")
+    }
+
+    static func switchFailed(_ error: Error) {
+        show("Couldn't switch", error.localizedDescription)
+    }
+
     /// Explains that the menu bar is full. Returns `true` if the user asked not to be told again.
     static func hiddenByNotch() -> Bool {
         NSApp.activate()
