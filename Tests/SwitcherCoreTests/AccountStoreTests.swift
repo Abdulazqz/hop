@@ -59,4 +59,24 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertFalse(result.recovered)
         XCTAssertEqual(result.accounts, one)
     }
+
+    func testVersionOneFileLoadsWithNilEmailsAndSavesAsVersionTwo() throws {
+        let v1 = """
+        {"version":1,"accounts":[{"color":"purple","id":"B3A47827-5F86-4DC6-8003-46C554E7BAEF","name":"Account 1"}]}
+        """
+        try Data(v1.utf8).write(to: file)
+        let loaded = try AccountStore.load(from: file)
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertNil(loaded[0].email)
+        try AccountStore.save(loaded, to: file)
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains("\"version\" : 2"), text)
+    }
+
+    func testEmailRoundTrips() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w")
+        one.email = "w@example.com"
+        try AccountStore.save([one], to: file)
+        XCTAssertEqual(try AccountStore.load(from: file)[0].email, "w@example.com")
+    }
 }

@@ -10,12 +10,22 @@ public struct Account: Codable, Equatable, Identifiable {
     public var color: AccountColor
     /// Claude profile folder passed as --user-data-dir, stored with "~". `nil` = default profile.
     public var folder: String?
+    /// claude.ai identity, set once a terminal login has been captured for this account.
+    public var email: String?
 
-    public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?) {
+    public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil) {
         self.id = id
         self.name = name
         self.color = color
         self.folder = folder
+        self.email = email
+    }
+
+    /// Lower-cased, trimmed email for comparisons; nil when unset or blank.
+    public var normalizedEmail: String? {
+        guard let email else { return nil }
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -25,6 +35,7 @@ public enum AccountValidationError: Error, Equatable, LocalizedError {
     case duplicateFolder(String)
     case relativeFolder(String)
     case overlappingFolders(String, String)
+    case duplicateEmail(String)
 
     public var errorDescription: String? {
         switch self {
@@ -34,6 +45,7 @@ public enum AccountValidationError: Error, Equatable, LocalizedError {
         case .relativeFolder(let folder): return "Use a full path for the folder (\(folder))."
         case .overlappingFolders(let a, let b):
             return "\u{201c}\(a)\u{201d} and \u{201c}\(b)\u{201d} are inside each other. Each account needs its own separate folder."
+        case .duplicateEmail(let email): return "Two accounts use the login \(email). Each account needs its own."
         }
     }
 }
@@ -43,6 +55,7 @@ public enum AccountValidation {
     /// normalization, absolute, and not nested inside one another.
     public static func validate(_ accounts: [Account], home: String) throws {
         var names = Set<String>()
+        var emails = Set<String>()
         var folders = Set<String>()
         var seen: [(stored: String, normalized: String)] = []
         for account in accounts {
@@ -50,6 +63,9 @@ public enum AccountValidation {
             guard !name.isEmpty else { throw AccountValidationError.emptyName }
             guard names.insert(name.lowercased()).inserted else {
                 throw AccountValidationError.duplicateName(name)
+            }
+            if let email = account.normalizedEmail, !emails.insert(email).inserted {
+                throw AccountValidationError.duplicateEmail(email)
             }
             let normalized = FolderPath.normalize(account.folder, home: home)
             guard folders.insert(normalized).inserted else {

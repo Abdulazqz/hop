@@ -77,4 +77,16 @@ final class AccountValidationTests: XCTestCase {
         XCTAssertEqual(AccountValidationError.duplicateName("Work").errorDescription,
                        "Another account is already called \u{201c}Work\u{201d}.")
     }
+
+    func testDuplicateEmailIsCaseInsensitiveAndTrimmed() {
+        var a = acct("A", nil); a.email = "Me@Example.com"
+        var b = acct("B", "~/x"); b.email = " me@example.com "
+        XCTAssertThrowsError(try AccountValidation.validate([a, b], home: home)) {
+            XCTAssertEqual($0 as? AccountValidationError, .duplicateEmail("me@example.com"))
+        }
+    }
+
+    func testAccountsWithoutEmailNeverCollide() throws {
+        try AccountValidation.validate([acct("A", nil), acct("B", "~/x"), acct("C", "~/y")], home: home)
+    }
 }
