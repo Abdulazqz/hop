@@ -28,6 +28,16 @@ final class MenuController: NSObject, NSMenuDelegate {
         rebuild()
     }
 
+    /// `true` when macOS has hidden the icon behind a display notch, `nil` before the item is laid out.
+    var isHiddenByNotch: Bool? {
+        guard let window = statusItem.button?.window else { return nil }
+        let screen = window.screen
+            ?? NSScreen.screens.first { $0.frame.intersects(window.frame) }
+            ?? NSScreen.main
+        guard let screen else { return nil }
+        return MenuBarPlacement.isHiddenByNotch(itemFrame: window.frame, safeTopRight: screen.auxiliaryTopRightArea)
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         model.tracker.refresh()
         rebuild()
