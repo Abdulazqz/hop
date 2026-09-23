@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launcher = Launcher(model: model)
         switcher = SwitchController(model: model)
         switcher.onChange = { [unowned self] in self.menu.rebuild() }
-        editWindow = EditAccountsWindow(model: model)
+        editWindow = EditAccountsWindow(model: model, switcher: switcher)
         menu = MenuController(model: model, actions: MenuActions(
             open: { [unowned self] in self.launcher.open($0) },
             quit: { [unowned self] in self.launcher.quit($0) },
