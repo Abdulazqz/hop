@@ -5,8 +5,32 @@ import Foundation
 public enum RunningSessions {
     public static let processName = "claude"
 
-    public static func count(processNames: [String]) -> Int {
-        processNames.filter { $0 == processName }.count
+    public static func isClaudeSession(name: String, path: String, argv: [String]) -> Bool {
+        // Check if process name is "claude"
+        if name == processName {
+            return true
+        }
+
+        // Check if the last path component of argv[0] is "claude"
+        if let firstArg = argv.first, (firstArg as NSString).lastPathComponent == processName {
+            return true
+        }
+
+        // Check if path contains "/claude/versions/"
+        if path.contains("/claude/versions/") {
+            return true
+        }
+
+        // Check if any argv element contains "@anthropic-ai/claude-code/"
+        if argv.contains(where: { $0.contains("@anthropic-ai/claude-code/") }) {
+            return true
+        }
+
+        return false
+    }
+
+    public static func count(processes: [(name: String, path: String, argv: [String])]) -> Int {
+        processes.filter { isClaudeSession(name: $0.name, path: $0.path, argv: $0.argv) }.count
     }
 
     public static func count() -> Int {
@@ -15,13 +39,17 @@ public enum RunningSessions {
         let bytes = proc_listpids(UInt32(PROC_UID_ONLY), uid, &pids, Int32(pids.count * MemoryLayout<pid_t>.size))
         guard bytes > 0 else { return 0 }
         let found = Int(bytes) / MemoryLayout<pid_t>.size
-        var names: [String] = []
-        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        var processes: [(name: String, path: String, argv: [String])] = []
+        var nameBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+
         for pid in pids.prefix(found) where pid > 0 {
-            if proc_name(pid, &buffer, UInt32(buffer.count)) > 0 {
-                names.append(String(cString: buffer))
-            }
+            let name = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count)) > 0 ? String(cString: nameBuffer) : ""
+            let path = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count)) > 0 ? String(cString: pathBuffer) : ""
+            let argv = ProcessArgs.argv(pid: pid) ?? []
+            processes.append((name: name, path: path, argv: argv))
         }
-        return count(processNames: names)
+
+        return count(processes: processes)
     }
 }
