@@ -57,12 +57,16 @@ account, then switch to any other account once. Hop asks where to save the
 login it found.
 
 **Open Terminal** switches if needed and opens a Terminal window running
-`claude`. macOS asks once to let Hop control Terminal; allow it. The first time
-Hop switches, macOS also asks whether Hop may read Claude Code's Keychain item:
-choose **Always Allow**. `build.sh` signs Hop with your Apple Development
-identity when Xcode has one, so that answer holds across rebuilds; without one
-it signs ad hoc and macOS asks again after every rebuild. Hop reads the Keychain
-only when you switch, save, or forget a login, never just to draw the menu.
+`claude`. macOS asks once to let Hop control Terminal; allow it. Hop reads and
+writes Claude Code's Keychain item through Apple's `security` tool, the same way
+Claude Code does, so macOS doesn't ask about it and running `claude` sessions
+keep their access. (Writing it through the Security framework instead would
+re-stamp the item with Hop and every session would hit a "security wants to
+access key" dialog.) Hop touches the Keychain only when you switch, save, or
+forget a login, never just to draw the menu. Hop's own saved logins are
+Keychain items Hop creates; `build.sh` signs Hop with your Apple Development
+identity when Xcode has a valid one, so access to them holds across rebuilds.
+Without one it signs ad hoc and macOS asks about them after every rebuild.
 
 A saved login lasts as long as its refresh token, about four weeks. Rows warn
 seven days before. Log in as that account once to renew it.

@@ -363,3 +363,48 @@ password prompt, in the middle of the user's work.
 4. **Nothing in the build or test loop relaunches the installed app.** The one
    install happens in the manual end-to-end step, with the user present and warned
    about the single Keychain prompt.
+
+## Revision after the first field switch (2026-10-27): the live item goes through `security`
+
+**What went wrong.** The first real switch worked (the Keychain held the new
+login), but every running `claude` session then raised a "security wants to
+access key 'Claude Code-credentials'" dialog, and sessions whose read was denied
+or timed out kept their old login or started without one. Cause: Claude Code
+reads and writes its item with Apple's `security` tool, and a Security-framework
+write from Hop re-stamps the item's partition list with Hop's team ID, dropping
+`apple-tool:`, so the tool is no longer allowed in. Reproduced on a throwaway
+item: created by `security`, readable by `security`, one framework data update
+from a team-signed app, and `security` is stopped by the dialog with the
+trusted-app list unchanged. Only the keychain password can edit the partition
+list, so there is no framework-only fix.
+
+**Decisions.**
+
+1. **Hop drives `security` for the live item**, exactly as Claude Code does:
+   `find-generic-password -w` to read, `add-generic-password -U -X <hex>` to
+   write, `delete-generic-password` to roll back. The ACL subject is then the
+   tool itself, which the item already trusts, so neither the "Hop wants to
+   access" prompts nor the per-session flood occur. Hop's own saved-login items
+   stay on the framework; Hop creates and owns them.
+2. **The value goes on `security -i`'s stdin, never argv**: `ps` shows every
+   process's arguments to the same user. The tool splits a stdin line longer
+   than 4096 bytes and runs the first part, storing a truncated value (verified
+   2026-10-28 on a throwaway item: 3900 bytes stored whole, 4200 cut to 4039),
+   so a line is capped at 4000 bytes. Hex (`-X`) carries any bytes but doubles
+   the size, and Claude Code's login is about 2.4 KB, so a value that no longer
+   fits as hex goes as quoted text (`-w "…"`): the line reader honours `\"` and
+   `\\` inside double quotes, and tabs, DEL and UTF-8 pass through; line
+   terminators can't. A value that fits neither way is refused with an error.
+   Two dead ends, recorded so nobody retries them: the password prompt (no `-w`)
+   stores an empty value when the tool has no tty, and `find-generic-password
+   -w` prints a value that isn't printable ASCII as hex, so only ASCII values
+   round-trip through a read (Claude Code's is ASCII JSON).
+3. **Every call has a timeout.** A dialog would hold the tool open; after 20 s
+   Hop kills it and reports the failure instead of hanging.
+4. `SecurityTool` (pure: invocations, exit-code mapping) and `SecurityToolItem`
+   (runs the tool) live in SwitcherCore. `SecurityToolTests` covers the mapping;
+   `testItemWrittenByHopStaysReadableByTheSecurityTool` runs the tool path end to
+   end against the real login keychain when `HOP_KEYCHAIN_TESTS=1`. It cannot
+   catch a revert to a framework write (that would need a framework write in the
+   test, which risks a dialog); the manual reproduction above is the proof.
+

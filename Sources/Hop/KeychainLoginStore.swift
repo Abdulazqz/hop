@@ -9,14 +9,18 @@ struct KeychainError: LocalizedError {
     }
 }
 
-/// Claude Code's live login item plus Hop's own saved-login items, via the Security framework.
+/// Claude Code's live login item (through `security`) plus Hop's own saved-login items (Security framework).
 final class KeychainLoginStore: LoginStore {
     static let liveService = "Claude Code-credentials"
     static let savedService = "local.hop.login"
 
-    func readLive() throws -> Data? { try read(service: Self.liveService, account: NSUserName()) }
-    func writeLive(_ value: Data) throws { try write(value, service: Self.liveService, account: NSUserName()) }
-    func deleteLive() throws { try delete(service: Self.liveService, account: NSUserName()) }
+    /// Claude Code reads and writes its item with `security`, so Hop does too: a framework write would
+    /// re-stamp the item's partition list with Hop and every Claude Code session would hit a Keychain dialog.
+    private let live = SecurityToolItem(service: KeychainLoginStore.liveService, account: NSUserName())
+
+    func readLive() throws -> Data? { try live.read() }
+    func writeLive(_ value: Data) throws { try live.write(value) }
+    func deleteLive() throws { try live.delete() }
     func readSaved(_ accountID: UUID) throws -> Data? { try read(service: Self.savedService, account: accountID.uuidString) }
     func writeSaved(_ value: Data, for accountID: UUID) throws { try write(value, service: Self.savedService, account: accountID.uuidString) }
     func deleteSaved(_ accountID: UUID) throws { try delete(service: Self.savedService, account: accountID.uuidString) }
