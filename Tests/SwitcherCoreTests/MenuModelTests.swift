@@ -59,6 +59,18 @@ final class MenuModelTests: XCTestCase {
         XCTAssertNil(model.saveCurrentLoginLabel)
     }
 
+    func testHeaderShowsTheLiveOrganizationForAnAccountThatHasNotRecordedOne() {
+        // "Team" was saved before Hop tracked organizations; the live login is the same email in another organization.
+        let legacy = Account(name: "Me (Team)", color: .blue, folder: "~/mt", email: "me@example.com")
+        let summary = LoginSummary(email: "me@example.com", refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture,
+                                   organizationUuid: "org-p", organizationName: "Personal")
+        let model = MenuModel.build(accounts: [legacy], live: .loggedIn(summary), state: .empty, savedLoginExpiry: [:],
+                                    hasSavedLogin: [legacy.id], desktopRunning: [], runningSessions: 0,
+                                    hotkeyAction: .off, hotkeyPositions: [], now: now)
+        XCTAssertEqual(model.activeAccountID, legacy.id)
+        XCTAssertEqual(model.header, "Active: Me (Team) (me@example.com · Personal)")
+    }
+
     func testUnknownOrganizationOffersToSaveItWithTheOrganizationName() {
         let team = Account(name: "Me (Team)", color: .blue, folder: "~/mt", email: "me@example.com",
                            organizationUuid: "org-t", organizationName: "Team")

@@ -11,6 +11,8 @@ final class SwitchController {
     private let identityDocument: IdentityDocumentStore
     private let coordinator: SwitchCoordinator
     private let stateURL: URL
+    /// False from the command line: an unknown login is reported as an error instead of opening the save dialog.
+    private let interactive: Bool
     private(set) var state: HopState
     private(set) var live: LiveLoginState = .loggedOut
     /// Set once the live data was unrecognized; Switch stays disabled until relaunch.
@@ -21,11 +23,12 @@ final class SwitchController {
 
     init(model: AppModel, logins: LoginStore = KeychainLoginStore(),
          identityDocument: IdentityDocumentStore = IdentityDocumentFile(), stateURL: URL = HopStateFile.url,
-         reportError: ((Error) -> Void)? = nil) {
+         interactive: Bool = true, reportError: ((Error) -> Void)? = nil) {
         self.model = model
         self.logins = logins
         self.identityDocument = identityDocument
         self.stateURL = stateURL
+        self.interactive = interactive
         self.state = HopState.load(from: stateURL)
         self.coordinator = SwitchCoordinator(logins: logins, identityDocument: identityDocument, home: NSHomeDirectory())
         if let reportError { self.reportError = reportError }
@@ -67,6 +70,7 @@ final class SwitchController {
         do {
             return try attemptSwitch(to: account) { _ in nil }
         } catch SwitchError.cancelled(let login) {
+            guard interactive else { return switchFailed(SwitchError.cancelled(login: login)) }
             guard let choice = UnknownLoginDialog.ask(login: login, candidates: model.accounts.filter { $0.email == nil }) else {
                 return false
             }

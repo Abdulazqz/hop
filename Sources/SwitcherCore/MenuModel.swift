@@ -34,7 +34,10 @@ public struct MenuModel: Equatable {
             let attribution = LoginAttribution.attribute(summary, accounts: accounts, state: state)
             activeID = attribution.accountID
             if let activeID, let account = accounts.first(where: { $0.id == activeID }) {
-                header = "Active: \(account.name) (\(account.loginLabel ?? summary.label))"
+                // The account's own identity, with the live organization filled in when the account hasn't recorded one.
+                let label = LoginSummary.label(email: account.email ?? summary.email,
+                                               organizationName: account.organizationName ?? summary.organizationName)
+                header = "Active: \(account.name) (\(label))"
             } else {
                 unknownLogin = summary.label
                 header = "Active: \(summary.label) (not saved)"

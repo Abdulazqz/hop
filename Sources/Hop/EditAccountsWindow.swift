@@ -72,7 +72,7 @@ private struct EditAccountsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if let login = account.loginLabel {
-                            Text(login).font(.caption).foregroundStyle(.secondary)
+                            Text(login).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             Button { forgetPending = account } label: { Image(systemName: "key.slash") }
                                 .buttonStyle(.borderless)
                                 .help("Forget saved login")
