@@ -59,4 +59,52 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertFalse(result.recovered)
         XCTAssertEqual(result.accounts, one)
     }
+
+    func testVersionOneFileLoadsWithNilEmailsAndSavesAsVersionTwo() throws {
+        let v1 = """
+        {"version":1,"accounts":[{"color":"purple","id":"B3A47827-5F86-4DC6-8003-46C554E7BAEF","name":"Account 1"}]}
+        """
+        try Data(v1.utf8).write(to: file)
+        let loaded = try AccountStore.load(from: file)
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertNil(loaded[0].email)
+        try AccountStore.save(loaded, to: file)
+        let text = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(text.contains("\"version\" : 2"), text)
+    }
+
+    func testEmailRoundTrips() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w")
+        one.email = "w@example.com"
+        try AccountStore.save([one], to: file)
+        XCTAssertEqual(try AccountStore.load(from: file)[0].email, "w@example.com")
+    }
+
+    func testSavedLoginExpiryRoundTripsAndIsOptional() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w", email: "w@example.com")
+        one.savedLoginExpiresAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try AccountStore.save([one], to: file)
+        XCTAssertEqual(try AccountStore.load(from: file)[0].savedLoginExpiresAt, Date(timeIntervalSince1970: 1_800_000_000))
+        let v2 = """
+        {"version":2,"accounts":[{"color":"teal","id":"AB280B13-F794-44B6-B1F7-C0F32F1ED5D8","name":"Old","email":"o@example.com"}]}
+        """
+        try Data(v2.utf8).write(to: file)
+        XCTAssertNil(try AccountStore.load(from: file)[0].savedLoginExpiresAt)
+    }
+
+    func testOrganizationRoundTripsAndIsOptional() throws {
+        var one = Account(name: "Work", color: .blue, folder: "~/w", email: "w@example.com")
+        one.organizationUuid = "org-1"
+        one.organizationName = "One"
+        try AccountStore.save([one], to: file)
+        let loaded = try AccountStore.load(from: file)[0]
+        XCTAssertEqual(loaded.organizationUuid, "org-1")
+        XCTAssertEqual(loaded.organizationName, "One")
+        let v2 = """
+        {"version":2,"accounts":[{"color":"teal","id":"AB280B13-F794-44B6-B1F7-C0F32F1ED5D8","name":"Old","email":"o@example.com"}]}
+        """
+        try Data(v2.utf8).write(to: file)
+        XCTAssertNil(try AccountStore.load(from: file)[0].organizationUuid)
+        XCTAssertNil(try AccountStore.load(from: file)[0].organizationName)
+    }
 }

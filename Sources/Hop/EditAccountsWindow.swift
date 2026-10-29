@@ -5,9 +5,13 @@ import SwitcherCore
 @MainActor
 final class EditAccountsWindow {
     private let model: AppModel
+    private let switcher: SwitchController
     private var window: NSWindow?
 
-    init(model: AppModel) { self.model = model }
+    init(model: AppModel, switcher: SwitchController) {
+        self.model = model
+        self.switcher = switcher
+    }
 
     /// Opens a fresh editor (so it always starts from the saved accounts), or fronts the open one.
     func show() {
@@ -16,7 +20,7 @@ final class EditAccountsWindow {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let view = EditAccountsView(model: model) { [weak self] in self?.close() }
+        let view = EditAccountsView(model: model, switcher: switcher) { [weak self] in self?.close() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Edit accounts"
         window.styleMask = [.titled, .closable]
@@ -37,14 +41,17 @@ final class EditAccountsWindow {
 
 private struct EditAccountsView: View {
     let model: AppModel
+    let switcher: SwitchController
     let close: () -> Void
     @State private var accounts: [Account]
     @State private var accountsToTrash: [Account] = []
     @State private var pendingRemoval: Account?
+    @State private var forgetPending: Account?
     @State private var error: String?
 
-    init(model: AppModel, close: @escaping () -> Void) {
+    init(model: AppModel, switcher: SwitchController, close: @escaping () -> Void) {
         self.model = model
+        self.switcher = switcher
         self.close = close
         _accounts = State(initialValue: model.accounts)
     }
@@ -64,6 +71,12 @@ private struct EditAccountsView: View {
                         Text(folderLabel(account))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if let login = account.loginLabel {
+                            Text(login).font(.caption).foregroundStyle(.secondary)
+                            Button { forgetPending = account } label: { Image(systemName: "key.slash") }
+                                .buttonStyle(.borderless)
+                                .help("Forget saved login")
+                        }
                         Button { pendingRemoval = account } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                             .help("Remove account")
@@ -95,6 +108,25 @@ private struct EditAccountsView: View {
                 pendingRemoval = nil
             }
         }
+        .confirmationDialog("Forget the saved login for \(forgetPending?.name ?? "")?", isPresented: Binding(get: { forgetPending != nil }, set: { if !$0 { forgetPending = nil } })) {
+            Button("Forget", role: .destructive) {
+                guard let account = forgetPending else { return }
+                do {
+                    try switcher.forgetSavedLogin(account)
+                    if let index = accounts.firstIndex(where: { $0.id == account.id }) {
+                        accounts[index].email = nil
+                        accounts[index].organizationUuid = nil
+                        accounts[index].organizationName = nil
+                        accounts[index].savedLoginExpiresAt = nil
+                    }
+                } catch {
+                    self.error = error.localizedDescription
+                }
+                forgetPending = nil
+            }
+        } message: {
+            Text("Hop deletes its copy of that terminal login. Log in again as that account and switch once to save it again.")
+        }
     }
 
     private func folderLabel(_ account: Account) -> String {
@@ -107,6 +139,7 @@ private struct EditAccountsView: View {
     }
 
     private func save() {
+        let originalIDs = Set(model.accounts.map(\.id))
         let trimmed = accounts.map { account -> Account in
             var account = account
             account.name = account.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,6 +154,7 @@ private struct EditAccountsView: View {
             self.error = error.localizedDescription
             return
         }
+        switcher.deleteSavedLogins(for: Array(originalIDs.subtracting(trimmed.map(\.id))))
         for account in safe {
             let url = URL(fileURLWithPath: FolderPath.normalize(account.folder, home: NSHomeDirectory()))
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
@@ -144,7 +178,7 @@ private struct RemoveAccountSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Remove “\(account.name)”?").font(.headline)
-            Text("It leaves Hop. Its sign-in stays in its folder unless you move the folder to the Trash.")
+            Text("It leaves Hop. Its desktop sign-in stays in its folder unless you move the folder to the Trash; its saved terminal login is deleted.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Toggle("Also move its data folder to the Trash", isOn: $trashFolder)

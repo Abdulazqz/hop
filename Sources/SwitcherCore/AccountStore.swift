@@ -6,7 +6,7 @@ public struct AccountsFile: Codable, Equatable {
 }
 
 public enum AccountStore {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public static var defaultURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
