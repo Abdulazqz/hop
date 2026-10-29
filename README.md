@@ -71,6 +71,14 @@ Without one it signs ad hoc and macOS asks about them after every rebuild.
 A saved login lasts as long as its refresh token, about four weeks. Rows warn
 seven days before. Log in as that account once to renew it.
 
+One claude.ai account can belong to several organizations (a personal plan and
+a team, say), and each organization is a separate login: `/login` asks which one
+you want. Hop keeps them apart as separate accounts, matching a login by email
+*and* organization, and shows the organization next to the email in the menu,
+in Edit accounts, and in `hop status`. Accounts saved by an older Hop have no
+organization recorded yet; Hop learns it from the saved login the next time you
+switch, and never saves one organization's login over another's.
+
 Accounts that use a separate `CLAUDE_CONFIG_DIR` are not supported; Hop manages
 the default login only.
 

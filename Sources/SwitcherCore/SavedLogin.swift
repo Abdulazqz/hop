@@ -21,6 +21,17 @@ public struct SavedLogin: Equatable {
     }
 
     public var email: String? { IdentityDocument.email(inIdentity: identity) }
+    public var organizationUuid: String? { IdentityDocument.organizationUuid(inIdentity: identity) }
+    public var organizationName: String? { IdentityDocument.organizationName(inIdentity: identity) }
+
+    /// True when the live identity is this login's: same email, and the same organization when both record one.
+    public func matchesIdentity(of summary: LoginSummary) -> Bool {
+        guard let mine = Account.normalized(email)?.lowercased(),
+              mine == Account.normalized(summary.email)?.lowercased() else { return false }
+        guard let myOrganization = Account.normalized(organizationUuid),
+              let theirOrganization = summary.normalizedOrganizationUuid else { return true }
+        return myOrganization == theirOrganization
+    }
     public var refreshTokenExpiresAt: Date? { LiveLogin.refreshTokenExpiry(ofLoginSection: loginSection) }
     public var refreshTokenSHA256: String? { LiveLogin.refreshTokenSHA256(ofLoginSection: loginSection) }
 

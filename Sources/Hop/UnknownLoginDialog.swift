@@ -4,11 +4,12 @@ import SwitcherCore
 @MainActor
 enum UnknownLoginDialog {
     /// "Save the current login as…": a new account, or one of the accounts that has no email yet. nil = cancel.
-    static func ask(email: String, candidates: [Account]) -> UnknownLoginChoice? {
+    /// `login` is the display label, "email · organization".
+    static func ask(login: String, candidates: [Account]) -> UnknownLoginChoice? {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Save the current login?"
-        alert.informativeText = "Terminal is logged in as \(email), which Hop hasn't saved. Switching away would lose that login, so save it first."
+        alert.informativeText = "Terminal is logged in as \(login), which Hop hasn't saved. Switching away would lose that login, so save it first."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 26))

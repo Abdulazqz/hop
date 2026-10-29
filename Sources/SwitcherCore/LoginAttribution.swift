@@ -1,9 +1,11 @@
 import Foundation
 
-/// Which Hop account the live terminal login belongs to.
+/// Which Hop account the live terminal login belongs to. A login is an email *in an organization*: one claude.ai
+/// account can be in several organizations, each with its own login, so the email alone doesn't settle it.
 public enum LoginAttribution: Equatable {
     /// The token is the one Hop last wrote, so it belongs to that account even if a stale session rewrote the identity file.
     case hopWrote(UUID)
+    /// Same email and organization; or same email against an account whose organization isn't recorded yet.
     case emailMatch(UUID)
     case unknown(email: String)
 
@@ -20,8 +22,15 @@ public enum LoginAttribution: Equatable {
             return .hopWrote(id)
         }
         let wanted = live.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let match = accounts.first(where: { $0.normalizedEmail == wanted }) {
+        let sameEmail = accounts.filter { $0.normalizedEmail == wanted }
+        if let organization = live.normalizedOrganizationUuid,
+           let match = sameEmail.first(where: { $0.normalizedOrganizationUuid == organization }) {
             return .emailMatch(match.id)
+        }
+        // An account saved before Hop recorded organizations matches on email alone. One that records a different
+        // organization never does: saving under it would overwrite that organization's login.
+        if let legacy = sameEmail.first(where: { $0.normalizedOrganizationUuid == nil }) {
+            return .emailMatch(legacy.id)
         }
         return .unknown(email: live.email)
     }

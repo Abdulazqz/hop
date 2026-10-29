@@ -8,6 +8,11 @@ final class IdentityDocumentTests: XCTestCase {
         XCTAssertEqual(object["emailAddress"] as? String, "x@y.z")
         XCTAssertNil(object["numStartups"])
         XCTAssertEqual(IdentityDocument.email(inIdentity: identity), "x@y.z")
+        XCTAssertNil(IdentityDocument.organizationUuid(inIdentity: identity))
+        XCTAssertEqual(IdentityDocument.organizationName(inIdentity: identity), "Org")
+        let withOrg = try XCTUnwrap(try IdentityDocument.identity(of: LoginFixtures.identityDocument(email: "x@y.z", organizationUuid: "org-9", organizationName: "Nine")))
+        XCTAssertEqual(IdentityDocument.organizationUuid(inIdentity: withOrg), "org-9")
+        XCTAssertEqual(IdentityDocument.organizationName(inIdentity: withOrg), "Nine")
     }
 
     func testMissingIdentityIsNil() throws {

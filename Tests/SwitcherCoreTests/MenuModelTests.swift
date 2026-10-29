@@ -25,7 +25,7 @@ final class MenuModelTests: XCTestCase {
         XCTAssertEqual(model.rows.map(\.isActive), [false, true, false])
         XCTAssertEqual(model.rows[1].switchLabel, .active)
         XCTAssertEqual(model.rows[0].switchLabel, .switchLogin)
-        XCTAssertNil(model.saveCurrentLoginEmail)
+        XCTAssertNil(model.saveCurrentLoginLabel)
     }
 
     func testHopsOwnWriteWinsOverARewrittenIdentity() {
@@ -39,14 +39,43 @@ final class MenuModelTests: XCTestCase {
         let model = build(live: live("new@example.com"))
         XCTAssertNil(model.activeAccountID)
         XCTAssertEqual(model.header, "Active: new@example.com (not saved)")
-        XCTAssertEqual(model.saveCurrentLoginEmail, "new@example.com")
+        XCTAssertEqual(model.saveCurrentLoginLabel, "new@example.com")
         XCTAssertTrue(model.rows.allSatisfy { !$0.isActive })
+    }
+
+    func testSameEmailInTwoOrganizationsChecksTheMatchingOne() {
+        let personal = Account(name: "Me (Personal)", color: .coral, folder: "~/mp", email: "me@example.com",
+                               organizationUuid: "org-p", organizationName: "Personal")
+        let team = Account(name: "Me (Team)", color: .blue, folder: "~/mt", email: "me@example.com",
+                           organizationUuid: "org-t", organizationName: "Team")
+        let summary = LoginSummary(email: "me@example.com", refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture,
+                                   organizationUuid: "org-t", organizationName: "Team")
+        let model = MenuModel.build(accounts: [personal, team], live: .loggedIn(summary), state: .empty, savedLoginExpiry: [:],
+                                    hasSavedLogin: [personal.id, team.id], desktopRunning: [], runningSessions: 0,
+                                    hotkeyAction: .off, hotkeyPositions: [], now: now)
+        XCTAssertEqual(model.activeAccountID, team.id)
+        XCTAssertEqual(model.header, "Active: Me (Team) (me@example.com · Team)")
+        XCTAssertEqual(model.rows.map(\.isActive), [false, true])
+        XCTAssertNil(model.saveCurrentLoginLabel)
+    }
+
+    func testUnknownOrganizationOffersToSaveItWithTheOrganizationName() {
+        let team = Account(name: "Me (Team)", color: .blue, folder: "~/mt", email: "me@example.com",
+                           organizationUuid: "org-t", organizationName: "Team")
+        let summary = LoginSummary(email: "me@example.com", refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture,
+                                   organizationUuid: "org-x", organizationName: "Other")
+        let model = MenuModel.build(accounts: [team], live: .loggedIn(summary), state: .empty, savedLoginExpiry: [:],
+                                    hasSavedLogin: [team.id], desktopRunning: [], runningSessions: 0,
+                                    hotkeyAction: .off, hotkeyPositions: [], now: now)
+        XCTAssertNil(model.activeAccountID)
+        XCTAssertEqual(model.header, "Active: me@example.com · Other (not saved)")
+        XCTAssertEqual(model.saveCurrentLoginLabel, "me@example.com · Other")
     }
 
     func testLoggedOutAndUnrecognized() {
         XCTAssertEqual(build(live: .loggedOut).header, "Not logged in")
         XCTAssertEqual(build(live: .unrecognized("x")).header, "Login format not recognized")
-        XCTAssertNil(build(live: .loggedOut).saveCurrentLoginEmail)
+        XCTAssertNil(build(live: .loggedOut).saveCurrentLoginLabel)
     }
 
     func testAccountWithoutSavedLoginSaysLogInFirst() {

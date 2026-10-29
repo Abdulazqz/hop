@@ -27,7 +27,7 @@ public enum SwitchError: Error, Equatable, LocalizedError {
     case targetHasNoLogin(String)
     case targetLoginExpired(name: String, on: Date)
     case alreadyActive(String)
-    case cancelled(email: String)
+    case cancelled(login: String)
     case attachTargetHasLogin(String)
     case store(String)
     case rolledBack(String)
@@ -39,7 +39,7 @@ public enum SwitchError: Error, Equatable, LocalizedError {
         case .targetLoginExpired(let name, let on):
             "\(name)'s saved login expired on \(on.formatted(date: .abbreviated, time: .omitted)). Log in as it once in Terminal."
         case .alreadyActive(let name): "\(name) is already the active account."
-        case .cancelled(let email): "The current login (\(email)) isn't saved. Save it first, or the switch would lose it."
+        case .cancelled(let login): "The current login (\(login)) isn't saved. Save it first, or the switch would lose it."
         case .attachTargetHasLogin(let name): "\(name) already has a saved login. Pick an account without one, or create a new account."
         case .store(let why): why
         case .rolledBack(let message): message
@@ -76,15 +76,16 @@ public struct SwitchCoordinator {
         let document = try identityDocument.read()
         let live = LiveLogin.parse(keychainValue: liveValue, identityDocument: document)
         if case .unrecognized(let why) = live { throw SwitchError.unrecognizedLogin(why) }
+        var accounts = accounts
 
         // 3 (early). The target must be usable, so a refused switch never captures anything either.
         guard let savedData = try logins.readSaved(targetID) else { throw SwitchError.targetHasNoLogin(target.name) }
         let saved = try SavedLogin.decode(savedData)
         guard let refreshExpiry = saved.refreshTokenExpiresAt else { throw SwitchError.unrecognizedLogin("saved login has no expiry") }
         if refreshExpiry <= now().addingTimeInterval(60) { throw SwitchError.targetLoginExpired(name: target.name, on: refreshExpiry) }
+        Self.learnOrganization(of: targetID, from: saved, in: &accounts)
 
         // 2. Attribute and save the outgoing login.
-        var accounts = accounts
         var from: UUID?
         if case .loggedIn(let summary) = live, let liveValue, let document {
             let (outgoingID, updated) = try captureLive(summary: summary, liveValue: liveValue, document: document,
@@ -93,7 +94,7 @@ public struct SwitchCoordinator {
             from = outgoingID
             if outgoingID == targetID {
                 // A stale session may have rewritten the identity file; put back the one saved for this account.
-                if let savedEmail = saved.email, savedEmail.lowercased() != summary.email.lowercased() {
+                if saved.email != nil, !saved.matchesIdentity(of: summary) {
                     try identityDocument.write(IdentityDocument.replacingIdentity(in: document, with: saved.identity))
                 }
                 throw SwitchError.alreadyActive(target.name)
@@ -131,11 +132,38 @@ public struct SwitchCoordinator {
         return (updated, HopState(activeAccountID: id, writtenRefreshTokenSHA256: summary.refreshTokenSHA256))
     }
 
-    public static func newAccount(email: String, accounts: [Account], home: String) -> Account {
+    /// Named after the email; after the organization too when another account already has that email.
+    public static func newAccount(email: String, organizationUuid: String?, organizationName: String?,
+                                  accounts: [Account], home: String) -> Account {
         let used = Set(accounts.map(\.color))
         let color = AccountColor.allCases.first { !used.contains($0) } ?? .gray
-        let folder = NewAccountFolder.candidate(forName: email, accounts: accounts, home: home)
-        return Account(name: email, color: color, folder: folder, email: email)
+        let emailTaken = accounts.contains { $0.normalizedEmail == Account.normalized(email)?.lowercased() }
+        var base = email
+        if emailTaken, let organization = Account.normalized(organizationName) { base = "\(email) (\(organization))" }
+        let name = uniqueName(base, among: accounts)
+        let folder = NewAccountFolder.candidate(forName: name, accounts: accounts, home: home)
+        return Account(name: name, color: color, folder: folder, email: email,
+                       organizationUuid: organizationUuid, organizationName: organizationName)
+    }
+
+    /// `base`, or `base 2`, `base 3`… when an account already has that name (case-insensitive).
+    static func uniqueName(_ base: String, among accounts: [Account]) -> String {
+        let taken = Set(accounts.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        var candidate = base
+        var n = 2
+        while taken.contains(candidate.lowercased()) {
+            candidate = "\(base) \(n)"
+            n += 1
+        }
+        return candidate
+    }
+
+    /// Records the organization an account's saved login belongs to, when the account doesn't know it yet.
+    static func learnOrganization(of id: UUID, from saved: SavedLogin, in accounts: inout [Account]) {
+        guard let index = accounts.firstIndex(where: { $0.id == id }), accounts[index].organizationUuid == nil,
+              let organization = saved.organizationUuid else { return }
+        accounts[index].organizationUuid = organization
+        accounts[index].organizationName = saved.organizationName
     }
 
     // MARK: - capture
@@ -153,16 +181,25 @@ public struct SwitchCoordinator {
             // A stale session may have rewritten the identity file; prefer the identity we saved for this account.
             // Without a readable saved item (it was forgotten) the hash proves nothing: attribute by email instead.
             if let data = try logins.readSaved(id), let previous = try? SavedLogin.decode(data) {
-                if previous.email?.lowercased() != summary.email.lowercased() { identity = previous.identity }
+                Self.learnOrganization(of: id, from: previous, in: &accounts)
+                if !previous.matchesIdentity(of: summary) { identity = previous.identity }
             } else {
                 attribution = LoginAttribution.attribute(summary, accounts: accounts, state: .empty)
             }
+        }
+        if case .emailMatch(let id) = attribution, let index = accounts.firstIndex(where: { $0.id == id }),
+           accounts[index].organizationUuid == nil,
+           let data = try logins.readSaved(id), let previous = try? SavedLogin.decode(data), previous.organizationUuid != nil {
+            // Matched on email alone because this account predates organizations. Its saved login says which
+            // organization it is; record that, then decide again so another organization's login never lands on it.
+            Self.learnOrganization(of: id, from: previous, in: &accounts)
+            attribution = LoginAttribution.attribute(summary, accounts: accounts, state: .empty)
         }
         switch attribution {
         case .hopWrote(let id), .emailMatch(let id):
             outgoingID = id
         case .unknown(let email):
-            switch resolveUnknown(email) {
+            switch resolveUnknown(summary.label) {
             case .attach(let id)?:
                 guard let index = accounts.firstIndex(where: { $0.id == id }) else { throw SwitchError.store("unknown account") }
                 if try accounts[index].email != nil || logins.readSaved(id) != nil {
@@ -171,15 +208,21 @@ public struct SwitchCoordinator {
                 accounts[index].email = email
                 outgoingID = id
             case .create?:
-                let created = Self.newAccount(email: email, accounts: accounts, home: home)
+                let created = Self.newAccount(email: email, organizationUuid: summary.organizationUuid,
+                                              organizationName: summary.organizationName, accounts: accounts, home: home)
                 accounts.append(created)
                 outgoingID = created.id
             case nil:
-                throw SwitchError.cancelled(email: email)
+                throw SwitchError.cancelled(login: summary.label)
             }
         }
-        if let index = accounts.firstIndex(where: { $0.id == outgoingID }), accounts[index].email == nil {
-            accounts[index].email = summary.email
+        if let index = accounts.firstIndex(where: { $0.id == outgoingID }) {
+            if accounts[index].email == nil { accounts[index].email = summary.email }
+            // The organization is the saved identity's: the live one, or the repaired one when a stale session rewrote it.
+            if accounts[index].organizationUuid == nil, let organization = IdentityDocument.organizationUuid(inIdentity: identity) {
+                accounts[index].organizationUuid = organization
+                accounts[index].organizationName = IdentityDocument.organizationName(inIdentity: identity)
+            }
         }
         let saved = SavedLogin(loginSection: section, identity: identity, capturedAt: now())
         try logins.writeSaved(try saved.encoded(), for: outgoingID)

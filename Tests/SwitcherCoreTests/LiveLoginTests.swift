@@ -93,6 +93,29 @@ final class LiveLoginTests: XCTestCase {
         XCTAssertEqual(s.refreshTokenSHA256, "")
     }
 
+    func testOrganizationIsReadFromTheIdentity() {
+        let document = LoginFixtures.identityDocument(email: "me@example.com", organizationUuid: "org-1", organizationName: "Team One")
+        guard case .loggedIn(let full) = LiveLogin.parse(keychainValue: LoginFixtures.keychainValue(), identityDocument: document) else {
+            return XCTFail("expected logged in")
+        }
+        XCTAssertEqual(full.organizationUuid, "org-1")
+        XCTAssertEqual(full.organizationName, "Team One")
+        XCTAssertEqual(full.label, "me@example.com · Team One")
+        guard case .loggedIn(let only) = LiveLogin.parseIdentityOnly(identityDocument: document) else { return XCTFail("expected logged in") }
+        XCTAssertEqual(only.organizationUuid, "org-1")
+        XCTAssertEqual(only.organizationName, "Team One")
+    }
+
+    func testIdentityWithoutAnOrganizationStillLogsIn() {
+        let document = LoginFixtures.identityDocument(email: "me@example.com", organizationUuid: nil, organizationName: nil)
+        guard case .loggedIn(let s) = LiveLogin.parse(keychainValue: LoginFixtures.keychainValue(), identityDocument: document) else {
+            return XCTFail("expected logged in")
+        }
+        XCTAssertNil(s.organizationUuid)
+        XCTAssertNil(s.organizationName)
+        XCTAssertEqual(s.label, "me@example.com")
+    }
+
     func testIdentityOnlyParseWithoutIdentityIsLoggedOut() {
         XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: LoginFixtures.identityDocument(email: nil)), .loggedOut)
         XCTAssertEqual(LiveLogin.parseIdentityOnly(identityDocument: nil), .loggedOut)

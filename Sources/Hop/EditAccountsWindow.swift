@@ -71,8 +71,8 @@ private struct EditAccountsView: View {
                         Text(folderLabel(account))
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        if let email = account.email {
-                            Text(email).font(.caption).foregroundStyle(.secondary)
+                        if let login = account.loginLabel {
+                            Text(login).font(.caption).foregroundStyle(.secondary)
                             Button { forgetPending = account } label: { Image(systemName: "key.slash") }
                                 .buttonStyle(.borderless)
                                 .help("Forget saved login")
@@ -115,6 +115,8 @@ private struct EditAccountsView: View {
                     try switcher.forgetSavedLogin(account)
                     if let index = accounts.firstIndex(where: { $0.id == account.id }) {
                         accounts[index].email = nil
+                        accounts[index].organizationUuid = nil
+                        accounts[index].organizationName = nil
                         accounts[index].savedLoginExpiresAt = nil
                     }
                 } catch {

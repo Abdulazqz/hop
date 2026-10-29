@@ -334,6 +334,44 @@ A "Terminal accounts" section: what Switch does, the eight-hour note, that Hop
 never logs in, how to add an account from a fresh `/login`, the Automation
 permission, the `hop switch` command, and the expiry rule.
 
+## Revision 2026-10-29: a login is an email *in an organization*
+
+**What went wrong.** `ai@rella.sa` belongs to two organizations, a personal
+Max plan and a team. Claude Code's `/login` asks which one, and the two logins
+differ in `oauthAccount.organizationUuid` (and `organizationName`) while sharing
+the email. Hop identified a login by email alone, so: the menu showed the
+"(Team)" account as active while the live login was the personal organization;
+the "(Personal)" account could never receive a login (`duplicateEmail`
+validation refused a second account with the same email, and the dialog never
+appeared because the email already matched "(Team)"); and the next switch away
+would have saved the personal organization's login over the team's.
+
+**Rules from here on.**
+
+1. **Identity is `(emailAddress, organizationUuid)`.** `Account` records
+   `organizationUuid` and `organizationName` next to `email`; `LoginSummary`
+   carries both from `oauthAccount`; `SavedLogin` exposes them from the identity
+   it already stores verbatim (every saved login already had its organization on
+   disk). Both are optional: a document without them still parses.
+2. **Attribution order:** hash match → same email and organization → same email
+   against an account whose organization is not recorded yet → unknown. An
+   account that records a *different* organization is never matched by email:
+   saving under it would overwrite that organization's login.
+3. **Validation:** a login is a duplicate only when email *and* organization
+   match, with "not recorded" as its own bucket, so `(email, nil)` next to
+   `(email, X)` is the legal upgrade state and `(email, X)` next to `(email, Y)`
+   is the two-organization case.
+4. **Upgrade without new Keychain reads at display time.** An account saved
+   before this revision learns its organization inside the switch procedure, at
+   the two moments its saved item is decoded anyway: as the target (step 3), and
+   as the outgoing account (hash match, or an email-only match, which then
+   re-attributes with the organization known). `accounts.json` stays at
+   version 2; the new fields are optional.
+5. **Display shows the organization** ("email · organization") in the menu
+   header, the "Save current login (…)" item, the unknown-login dialog, Edit
+   accounts, `hop status`, and `hop probe-login`. A new account for a second
+   organization of an already-saved email is named "email (organization)".
+
 ## Revision after Task 14 (2026-09-23): Keychain access only on explicit actions
 
 **What went wrong.** The first app build read Claude Code's Keychain item at launch

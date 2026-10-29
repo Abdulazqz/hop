@@ -7,12 +7,29 @@ public struct LoginSummary: Equatable {
     public let refreshTokenSHA256: String
     public let expiresAt: Date
     public let refreshTokenExpiresAt: Date
+    /// The organization this login is for (`oauthAccount.organizationUuid`); nil when Claude Code didn't record one.
+    public let organizationUuid: String?
+    public let organizationName: String?
 
-    public init(email: String, refreshTokenSHA256: String, expiresAt: Date, refreshTokenExpiresAt: Date) {
+    public init(email: String, refreshTokenSHA256: String, expiresAt: Date, refreshTokenExpiresAt: Date,
+                organizationUuid: String? = nil, organizationName: String? = nil) {
         self.email = email
         self.refreshTokenSHA256 = refreshTokenSHA256
         self.expiresAt = expiresAt
         self.refreshTokenExpiresAt = refreshTokenExpiresAt
+        self.organizationUuid = organizationUuid
+        self.organizationName = organizationName
+    }
+
+    /// Trimmed organization id for comparisons; nil when unset or blank.
+    public var normalizedOrganizationUuid: String? { Account.normalized(organizationUuid) }
+
+    /// "email · organization" for display.
+    public var label: String { Self.label(email: email, organizationName: organizationName) }
+
+    public static func label(email: String, organizationName: String?) -> String {
+        guard let organizationName = Account.normalized(organizationName) else { return email }
+        return "\(email) \u{B7} \(organizationName)"
     }
 }
 
@@ -29,6 +46,8 @@ public enum LiveLogin {
     public static let loginKey = "claudeAiOauth"
     public static let identityKey = "oauthAccount"
     public static let emailKey = "emailAddress"
+    public static let organizationUuidKey = "organizationUuid"
+    public static let organizationNameKey = "organizationName"
 
     public enum LoginError: Error, Equatable {
         case notAnObject
@@ -55,7 +74,9 @@ public enum LiveLogin {
         }
         return .loggedIn(LoginSummary(email: email, refreshTokenSHA256: sha256Hex(refresh),
                                       expiresAt: Date(timeIntervalSince1970: expiresAt! / 1000),
-                                      refreshTokenExpiresAt: Date(timeIntervalSince1970: refreshExpiresAt / 1000)))
+                                      refreshTokenExpiresAt: Date(timeIntervalSince1970: refreshExpiresAt / 1000),
+                                      organizationUuid: string(identity[organizationUuidKey]),
+                                      organizationName: string(identity[organizationNameKey])))
     }
 
     /// The identity file alone, for display. No Keychain access, so no token hash and no expiry.
@@ -64,7 +85,9 @@ public enum LiveLogin {
         guard let document = jsonObject(identityDocument) else { return .unrecognized("~/.claude.json isn't valid JSON") }
         guard let identity = document[identityKey] as? [String: Any],
               let email = identity[emailKey] as? String, !email.isEmpty else { return .loggedOut }
-        return .loggedIn(LoginSummary(email: email, refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture))
+        return .loggedIn(LoginSummary(email: email, refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture,
+                                      organizationUuid: string(identity[organizationUuidKey]),
+                                      organizationName: string(identity[organizationNameKey])))
     }
 
     public static func loginSection(of keychainValue: Data) throws -> Data {
@@ -106,5 +129,11 @@ public enum LiveLogin {
 
     static func millis(_ value: Any?) -> Double? {
         (value as? NSNumber)?.doubleValue
+    }
+
+    /// A non-empty string value, or nil.
+    static func string(_ value: Any?) -> String? {
+        guard let string = value as? String, !string.isEmpty else { return nil }
+        return string
     }
 }

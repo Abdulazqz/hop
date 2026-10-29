@@ -80,8 +80,8 @@ final class MenuController: NSObject, NSMenuDelegate {
             menu.addItem(accountItem(account, row: row))
         }
         menu.addItem(.separator())
-        if let email = computed.saveCurrentLoginEmail {
-            menu.addItem(ClosureMenuItem(title: "Save current login (\(email)) as new account…") { [weak self] in self?.actions.saveCurrentLogin() })
+        if let login = computed.saveCurrentLoginLabel {
+            menu.addItem(ClosureMenuItem(title: "Save current login (\(login)) as new account…") { [weak self] in self?.actions.saveCurrentLogin() })
         }
         if let add = actions.addAccount { menu.addItem(ClosureMenuItem(title: "Add account…", handler: add)) }
         if let edit = actions.editAccounts { menu.addItem(ClosureMenuItem(title: "Edit accounts…", handler: edit)) }

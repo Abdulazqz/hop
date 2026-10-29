@@ -12,10 +12,13 @@ public enum IdentityDocument {
         return try JSONSerialization.data(withJSONObject: identity)
     }
 
-    public static func email(inIdentity identity: Data) -> String? {
-        guard let object = LiveLogin.jsonObject(identity), let email = object[LiveLogin.emailKey] as? String,
-              !email.isEmpty else { return nil }
-        return email
+    public static func email(inIdentity identity: Data) -> String? { string(LiveLogin.emailKey, inIdentity: identity) }
+    public static func organizationUuid(inIdentity identity: Data) -> String? { string(LiveLogin.organizationUuidKey, inIdentity: identity) }
+    public static func organizationName(inIdentity identity: Data) -> String? { string(LiveLogin.organizationNameKey, inIdentity: identity) }
+
+    static func string(_ key: String, inIdentity identity: Data) -> String? {
+        guard let object = LiveLogin.jsonObject(identity) else { return nil }
+        return LiveLogin.string(object[key])
     }
 
     public static func replacingIdentity(in document: Data?, with identity: Data) throws -> Data {

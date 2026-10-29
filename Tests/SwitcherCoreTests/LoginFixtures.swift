@@ -15,10 +15,14 @@ enum LoginFixtures {
         return try! JSONSerialization.data(withJSONObject: object)
     }
 
-    static func identityDocument(email: String? = "a@example.com", extra: [String: Any] = ["numStartups": 3]) -> Data {
+    static func identityDocument(email: String? = "a@example.com", organizationUuid: String? = nil, organizationName: String? = "Org",
+                                 extra: [String: Any] = ["numStartups": 3]) -> Data {
         var object = extra
         if let email {
-            object["oauthAccount"] = ["emailAddress": email, "organizationName": "Org", "accountUuid": "acc-\(email)"]
+            var identity: [String: Any] = ["emailAddress": email, "accountUuid": "acc-\(email)"]
+            if let organizationUuid { identity["organizationUuid"] = organizationUuid }
+            if let organizationName { identity["organizationName"] = organizationName }
+            object["oauthAccount"] = identity
         }
         return try! JSONSerialization.data(withJSONObject: object)
     }

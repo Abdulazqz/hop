@@ -23,7 +23,7 @@ enum CLI {
                 return 1
             }
             switch live {
-            case .loggedIn(let s): print("logged in as \(s.email); login expires \(s.expiresAt); refresh expires \(s.refreshTokenExpiresAt)")
+            case .loggedIn(let s): print("logged in as \(s.label); login expires \(s.expiresAt); refresh expires \(s.refreshTokenExpiresAt)")
             case .loggedOut: print("logged out")
             case .unrecognized(let why): print("unrecognized: \(why)")
             }
@@ -38,9 +38,9 @@ enum CLI {
                 let app = model.tracker.running[account.id]
                 let desktop = app.map { "running\tpid \($0.processIdentifier)" } ?? "closed\t-"
                 let mark = account.id == active ? "*" : " "
-                print("\(i + 1)\t\(mark)\t\(account.name)\t\(account.email ?? "-")\t\(desktop)\t\(account.folder ?? FolderPath.defaultProfile)")
+                print("\(i + 1)\t\(mark)\t\(account.name)\t\(account.loginLabel ?? "-")\t\(desktop)\t\(account.folder ?? FolderPath.defaultProfile)")
             }
-            if case .loggedIn(let s) = switcher.live, active == nil { print("terminal login \(s.email) isn't saved in Hop") }
+            if case .loggedIn(let s) = switcher.live, active == nil { print("terminal login \(s.label) isn't saved in Hop") }
             return 0
         }
 
@@ -58,7 +58,7 @@ enum CLI {
             let switcher = SwitchController(model: model) { print("error: \($0.localizedDescription)") }
             let live = switcher.live
             if case .loggedIn(let s) = live, switcher.activeAccountID == nil {
-                print("error: current login (\(s.email)) isn't saved; save it from the menu first")
+                print("error: current login (\(s.label)) isn't saved; save it from the menu first")
                 return 1
             }
             let ok = switcher.switchTo(account)

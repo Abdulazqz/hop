@@ -12,23 +12,40 @@ public struct Account: Codable, Equatable, Identifiable {
     public var folder: String?
     /// claude.ai identity, set once a terminal login has been captured for this account.
     public var email: String?
+    /// The organization that login belongs to. One claude.ai account can be in several organizations (a personal
+    /// plan and a team, say), each with its own login, so the email alone doesn't tell them apart.
+    /// nil = not recorded yet (saved before Hop tracked organizations); learned from the saved login on the next switch.
+    public var organizationUuid: String?
+    public var organizationName: String?
     /// When the saved terminal login's refresh token expires; shown in the menu without touching the Keychain.
     public var savedLoginExpiresAt: Date?
 
     public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil,
-                savedLoginExpiresAt: Date? = nil) {
+                organizationUuid: String? = nil, organizationName: String? = nil, savedLoginExpiresAt: Date? = nil) {
         self.id = id
         self.name = name
         self.color = color
         self.folder = folder
         self.email = email
+        self.organizationUuid = organizationUuid
+        self.organizationName = organizationName
         self.savedLoginExpiresAt = savedLoginExpiresAt
     }
 
     /// Lower-cased, trimmed email for comparisons; nil when unset or blank.
-    public var normalizedEmail: String? {
-        guard let email else { return nil }
-        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    public var normalizedEmail: String? { Self.normalized(email)?.lowercased() }
+
+    /// Trimmed organization id for comparisons; nil when unset or blank.
+    public var normalizedOrganizationUuid: String? { Self.normalized(organizationUuid) }
+
+    /// "email · organization" for display; nil without a saved login.
+    public var loginLabel: String? {
+        email.map { LoginSummary.label(email: $0, organizationName: organizationName) }
+    }
+
+    static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 }
@@ -49,17 +66,18 @@ public enum AccountValidationError: Error, Equatable, LocalizedError {
         case .relativeFolder(let folder): return "Use a full path for the folder (\(folder))."
         case .overlappingFolders(let a, let b):
             return "\u{201c}\(a)\u{201d} and \u{201c}\(b)\u{201d} are inside each other. Each account needs its own separate folder."
-        case .duplicateEmail(let email): return "Two accounts use the login \(email). Each account needs its own."
+        case .duplicateEmail(let email): return "Two accounts use the login \(email) in the same organization. Each account needs its own."
         }
     }
 }
 
 public enum AccountValidation {
-    /// Names must be non-empty and unique (case-insensitive, trimmed); folders must be unique after
+    /// Names must be non-empty and unique (case-insensitive, trimmed); logins (email + organization) must be
+    /// unique, where "organization not recorded" counts as its own organization; folders must be unique after
     /// normalization, absolute, and not nested inside one another.
     public static func validate(_ accounts: [Account], home: String) throws {
         var names = Set<String>()
-        var emails = Set<String>()
+        var logins = Set<String>()
         var folders = Set<String>()
         var seen: [(stored: String, normalized: String)] = []
         for account in accounts {
@@ -68,7 +86,8 @@ public enum AccountValidation {
             guard names.insert(name.lowercased()).inserted else {
                 throw AccountValidationError.duplicateName(name)
             }
-            if let email = account.normalizedEmail, !emails.insert(email).inserted {
+            if let email = account.normalizedEmail,
+               !logins.insert(email + "\u{0}" + (account.normalizedOrganizationUuid ?? "")).inserted {
                 throw AccountValidationError.duplicateEmail(email)
             }
             let normalized = FolderPath.normalize(account.folder, home: home)

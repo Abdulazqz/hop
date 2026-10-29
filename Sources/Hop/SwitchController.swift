@@ -66,8 +66,8 @@ final class SwitchController {
         // across the dialog. The second pass re-reads everything with the user's answer.
         do {
             return try attemptSwitch(to: account) { _ in nil }
-        } catch SwitchError.cancelled(let email) {
-            guard let choice = UnknownLoginDialog.ask(email: email, candidates: model.accounts.filter { $0.email == nil }) else {
+        } catch SwitchError.cancelled(let login) {
+            guard let choice = UnknownLoginDialog.ask(login: login, candidates: model.accounts.filter { $0.email == nil }) else {
                 return false
             }
             do {
@@ -112,7 +112,7 @@ final class SwitchController {
     func saveCurrentLogin() {
         refreshLive()
         guard case .loggedIn(let summary) = live else { return }
-        guard let choice = UnknownLoginDialog.ask(email: summary.email, candidates: model.accounts.filter { $0.email == nil }) else { return }
+        guard let choice = UnknownLoginDialog.ask(login: summary.label, candidates: model.accounts.filter { $0.email == nil }) else { return }
         do {
             let (accounts, newState) = try coordinator.saveCurrentLogin(accounts: model.accounts, state: state, choice: choice)
             try persist(accounts: accounts, state: newState)
@@ -127,6 +127,8 @@ final class SwitchController {
         var accounts = model.accounts
         if let index = accounts.firstIndex(where: { $0.id == account.id }) {
             accounts[index].email = nil
+            accounts[index].organizationUuid = nil
+            accounts[index].organizationName = nil
             accounts[index].savedLoginExpiresAt = nil
         }
         try model.setAccounts(accounts)

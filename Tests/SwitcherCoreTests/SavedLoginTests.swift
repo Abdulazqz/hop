@@ -31,6 +31,20 @@ final class SavedLoginTests: XCTestCase {
         XCTAssertEqual(try sample(refreshExpiresAt: 2_000).refreshTokenExpiresAt, Date(timeIntervalSince1970: 2))
     }
 
+    func testOrganizationComesFromTheSavedIdentity() throws {
+        let identity = try XCTUnwrap(try IdentityDocument.identity(of: LoginFixtures.identityDocument(email: "s@example.com", organizationUuid: "org-s", organizationName: "Team S")))
+        let saved = SavedLogin(loginSection: try sample().loginSection, identity: identity, capturedAt: captured)
+        XCTAssertEqual(saved.organizationUuid, "org-s")
+        XCTAssertEqual(saved.organizationName, "Team S")
+        XCTAssertNil(try sample().organizationUuid)
+        let summary = LoginSummary(email: "S@example.com", refreshTokenSHA256: "", expiresAt: .distantFuture, refreshTokenExpiresAt: .distantFuture,
+                                   organizationUuid: "org-s", organizationName: "Team S")
+        XCTAssertTrue(saved.matchesIdentity(of: summary))
+        XCTAssertFalse(saved.matchesIdentity(of: LoginSummary(email: "s@example.com", refreshTokenSHA256: "", expiresAt: .distantFuture,
+                                                                refreshTokenExpiresAt: .distantFuture, organizationUuid: "org-other")))
+        XCTAssertTrue(try sample().matchesIdentity(of: summary), "a saved identity without an organization matches on email alone")
+    }
+
     func testRejectsUnsupportedVersionAndMissingFields() throws {
         let future = try JSONSerialization.data(withJSONObject: ["version": 9, "claudeAiOauth": [:], "oauthAccount": [:], "capturedAt": "x"])
         XCTAssertThrowsError(try SavedLogin.decode(future)) { XCTAssertEqual($0 as? SavedLogin.FormatError, .unsupportedVersion(9)) }

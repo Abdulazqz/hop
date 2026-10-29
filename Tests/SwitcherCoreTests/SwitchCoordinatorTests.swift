@@ -18,17 +18,25 @@ final class SwitchCoordinatorTests: XCTestCase {
         play = Account(name: "Play", color: .coral, folder: "~/p", email: "play@example.com")
     }
 
-    /// Live login = `email` with refresh token `refresh`; identity document carries the same email.
-    func setLive(email: String, refresh: String) {
+    /// Live login = `email` with refresh token `refresh`; identity document carries the same email (and organization).
+    func setLive(email: String, refresh: String, organization: String? = nil, organizationName: String? = "Org") {
         logins.live = LoginFixtures.keychainValue(refresh: refresh, extra: ["mcpOAuth": ["srv": ["accessToken": "m"]]])
-        identity.document = LoginFixtures.identityDocument(email: email, extra: ["numStartups": 7])
+        identity.document = LoginFixtures.identityDocument(email: email, organizationUuid: organization, organizationName: organizationName,
+                                                           extra: ["numStartups": 7])
     }
 
+    /// Saves a login for `account`; the saved identity carries the account's email and organization.
     func save(_ account: Account, refresh: String, refreshExpiresAt: Double = LoginFixtures.farFuture) throws {
+        let document = LoginFixtures.identityDocument(email: account.email, organizationUuid: account.organizationUuid,
+                                                      organizationName: account.organizationName ?? "Org")
         let saved = SavedLogin(loginSection: try LiveLogin.loginSection(of: LoginFixtures.keychainValue(refresh: refresh, refreshTokenExpiresAt: refreshExpiresAt)),
-                               identity: try XCTUnwrap(try IdentityDocument.identity(of: LoginFixtures.identityDocument(email: account.email))),
+                               identity: try XCTUnwrap(try IdentityDocument.identity(of: document)),
                                capturedAt: now)
         logins.saved[account.id] = try saved.encoded()
+    }
+
+    func savedRefresh(_ id: UUID) throws -> String? {
+        try SavedLogin.decode(try XCTUnwrap(logins.saved[id])).refreshTokenSHA256
     }
 
     func testHappyPathSavesOutgoingAndWritesTarget() throws {
@@ -88,7 +96,7 @@ final class SwitchCoordinatorTests: XCTestCase {
         setLive(email: "new@example.com", refresh: "rt-new")
         try save(play, refresh: "rt-play")
         XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in nil }) {
-            XCTAssertEqual($0 as? SwitchError, .cancelled(email: "new@example.com"))
+            XCTAssertEqual($0 as? SwitchError, .cancelled(login: "new@example.com · Org"))
         }
         XCTAssertTrue(logins.liveWrites.isEmpty)
         XCTAssertTrue(logins.saved[work.id] == nil)
@@ -98,12 +106,13 @@ final class SwitchCoordinatorTests: XCTestCase {
         setLive(email: "new@example.com", refresh: "rt-new")
         try save(play, refresh: "rt-play")
         var asked: String?
-        let result = try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { email in asked = email; return .create }
-        XCTAssertEqual(asked, "new@example.com")
+        let result = try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { login in asked = login; return .create }
+        XCTAssertEqual(asked, "new@example.com · Org")
         XCTAssertEqual(result.accounts.count, 3)
         let created = result.accounts[2]
         XCTAssertEqual(created.name, "new@example.com")
         XCTAssertEqual(created.email, "new@example.com")
+        XCTAssertEqual(created.organizationName, "Org")
         XCTAssertEqual(created.folder, "~/Library/Application Support/Claude-newexamplecom")
         XCTAssertEqual(result.from, created.id)
         XCTAssertNotNil(logins.saved[created.id])
@@ -301,8 +310,170 @@ final class SwitchCoordinatorTests: XCTestCase {
     }
 
     func testNewAccountPicksUnusedColor() {
-        let account = SwitchCoordinator.newAccount(email: "x@example.com", accounts: [work, play], home: home)
+        let account = SwitchCoordinator.newAccount(email: "x@example.com", organizationUuid: nil, organizationName: nil, accounts: [work, play], home: home)
         XCTAssertEqual(account.color, .purple)
         XCTAssertEqual(account.folder, "~/Library/Application Support/Claude-xexamplecom")
+    }
+
+    // MARK: - one email, several organizations
+
+    let personal = Account(name: "Me (Personal)", color: .coral, folder: "~/mp", email: "me@example.com",
+                           organizationUuid: "org-p", organizationName: "Personal")
+    let team = Account(name: "Me (Team)", color: .blue, folder: "~/mt", email: "me@example.com",
+                       organizationUuid: "org-t", organizationName: "Team")
+
+    func testSwitchingBetweenTwoOrganizationsOfOneEmail() throws {
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-p", organizationName: "Personal")
+        try save(team, refresh: "rt-t")
+        let result = try coordinator.switchTo(team.id, accounts: [personal, team], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, personal.id)
+        let savedPersonal = try SavedLogin.decode(try XCTUnwrap(logins.saved[personal.id]))
+        XCTAssertEqual(savedPersonal.refreshTokenSHA256, LiveLogin.sha256Hex("rt-p"))
+        XCTAssertEqual(savedPersonal.organizationUuid, "org-p")
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"), "Team's saved login is untouched")
+        let doc = LoginFixtures.json(try XCTUnwrap(identity.document))
+        XCTAssertEqual((doc["oauthAccount"] as? [String: Any])?["organizationUuid"] as? String, "org-t")
+        XCTAssertEqual(result.state.activeAccountID, team.id)
+    }
+
+    func testSwitchingBetweenTwoOrganizationsOfOneEmailWithIdentityOnlyOrganizationName() throws {
+        // Switching from Team to Personal: the identity file ends up carrying Personal's organization.
+        setLive(email: "me@example.com", refresh: "rt-t", organization: "org-t", organizationName: "Team")
+        try save(personal, refresh: "rt-p")
+        let result = try coordinator.switchTo(personal.id, accounts: [personal, team], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, team.id)
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"))
+        let doc = LoginFixtures.json(try XCTUnwrap(identity.document))
+        XCTAssertEqual((doc["oauthAccount"] as? [String: Any])?["organizationName"] as? String, "Personal")
+    }
+
+    func testALegacyAccountIsNotOverwrittenByTheSameEmailInAnotherOrganization() throws {
+        // Team was saved before Hop recorded organizations: email set, organization unknown, saved item holds org-t.
+        var legacyTeam = team
+        legacyTeam.organizationUuid = nil
+        legacyTeam.organizationName = nil
+        let bare = Account(name: "Me (Personal)", color: .coral, folder: "~/mp")
+        try save(team, refresh: "rt-t")
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-p", organizationName: "Personal")
+        try save(play, refresh: "rt-play")
+        var asked: String?
+        let result = try coordinator.switchTo(play.id, accounts: [legacyTeam, bare, play], state: .empty) { asked = $0; return .attach(bare.id) }
+        XCTAssertEqual(asked, "me@example.com · Personal")
+        XCTAssertEqual(result.from, bare.id)
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"), "Team's saved login must be untouched")
+        XCTAssertEqual(try savedRefresh(bare.id), LiveLogin.sha256Hex("rt-p"))
+        XCTAssertEqual(result.accounts[0].organizationUuid, "org-t", "Team learned its organization from its saved login")
+        XCTAssertEqual(result.accounts[0].organizationName, "Team")
+        XCTAssertEqual(result.accounts[1].email, "me@example.com")
+        XCTAssertEqual(result.accounts[1].organizationUuid, "org-p")
+        XCTAssertEqual(result.accounts[1].organizationName, "Personal")
+        XCTAssertNoThrow(try AccountValidation.validate(result.accounts, home: home))
+    }
+
+    func testALegacyAccountIsNotOverwrittenEvenWhenTheUserCancels() throws {
+        var legacyTeam = team
+        legacyTeam.organizationUuid = nil
+        try save(team, refresh: "rt-t")
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-p", organizationName: "Personal")
+        try save(play, refresh: "rt-play")
+        XCTAssertThrowsError(try coordinator.switchTo(play.id, accounts: [legacyTeam, play], state: .empty) { _ in nil }) {
+            XCTAssertEqual($0 as? SwitchError, .cancelled(login: "me@example.com · Personal"))
+        }
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"))
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+    }
+
+    func testALegacyAccountWhoseSavedLoginIsTheLiveOrganizationStillMatches() throws {
+        var legacyTeam = team
+        legacyTeam.organizationUuid = nil
+        legacyTeam.organizationName = nil
+        try save(team, refresh: "rt-t-old")
+        setLive(email: "me@example.com", refresh: "rt-t", organization: "org-t", organizationName: "Team")
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [legacyTeam, play], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, team.id)
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"))
+        XCTAssertEqual(result.accounts[0].organizationUuid, "org-t")
+        XCTAssertEqual(result.accounts[0].organizationName, "Team")
+    }
+
+    func testALegacyAccountWithoutASavedItemKeepsMatchingByEmail() throws {
+        // Email set but the saved item is gone: nothing to learn from, so the email match stands and the capture repairs it.
+        var legacyTeam = team
+        legacyTeam.organizationUuid = nil
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-p", organizationName: "Personal")
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [legacyTeam, play], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, team.id)
+        XCTAssertEqual(result.accounts[0].organizationUuid, "org-p")
+    }
+
+    func testSwitchingStampsTheTargetsOrganizationFromItsSavedLogin() throws {
+        var legacyTeam = team
+        legacyTeam.organizationUuid = nil
+        legacyTeam.organizationName = nil
+        try save(team, refresh: "rt-t")
+        setLive(email: "work@example.com", refresh: "rt-work")
+        let result = try coordinator.switchTo(team.id, accounts: [work, legacyTeam], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.accounts[1].organizationUuid, "org-t")
+        XCTAssertEqual(result.accounts[1].organizationName, "Team")
+    }
+
+    func testCaptureRecordsTheOrganizationOnTheOutgoingAccount() throws {
+        setLive(email: "work@example.com", refresh: "rt-work", organization: "org-w", organizationName: "Work Inc")
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [work, play], state: .empty) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.accounts[0].organizationUuid, "org-w")
+        XCTAssertEqual(result.accounts[0].organizationName, "Work Inc")
+    }
+
+    func testHopWroteWithARewrittenOrganizationRepairsTheIdentity() throws {
+        // Hop wrote Personal's token; a stale session then rewrote the identity file as the Team organization (same email).
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-t", organizationName: "Team")
+        try save(personal, refresh: "rt-p")
+        try save(play, refresh: "rt-play")
+        let state = HopState(activeAccountID: personal.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt-p"))
+        let result = try coordinator.switchTo(play.id, accounts: [personal, team, play], state: state) { _ in XCTFail("no dialog"); return nil }
+        XCTAssertEqual(result.from, personal.id)
+        XCTAssertEqual(try SavedLogin.decode(try XCTUnwrap(logins.saved[personal.id])).organizationUuid, "org-p")
+    }
+
+    func testSwitchingToTheActiveAccountRepairsARewrittenOrganization() throws {
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-t", organizationName: "Team")
+        try save(personal, refresh: "rt-p")
+        let state = HopState(activeAccountID: personal.id, writtenRefreshTokenSHA256: LiveLogin.sha256Hex("rt-p"))
+        XCTAssertThrowsError(try coordinator.switchTo(personal.id, accounts: [personal, team], state: state) { _ in nil }) {
+            XCTAssertEqual($0 as? SwitchError, .alreadyActive("Me (Personal)"))
+        }
+        let doc = LoginFixtures.json(try XCTUnwrap(identity.document))
+        XCTAssertEqual((doc["oauthAccount"] as? [String: Any])?["organizationUuid"] as? String, "org-p")
+        XCTAssertTrue(logins.liveWrites.isEmpty)
+    }
+
+    func testNewAccountForASecondOrganizationOfAnEmailGetsTheOrganizationInItsName() {
+        let first = Account(name: "x@example.com", color: .teal, folder: "~/x1", email: "x@example.com", organizationUuid: "org-1", organizationName: "One")
+        let account = SwitchCoordinator.newAccount(email: "x@example.com", organizationUuid: "org-2", organizationName: "Two", accounts: [first], home: home)
+        XCTAssertEqual(account.name, "x@example.com (Two)")
+        XCTAssertEqual(account.email, "x@example.com")
+        XCTAssertEqual(account.organizationUuid, "org-2")
+        XCTAssertEqual(account.organizationName, "Two")
+        XCTAssertEqual(account.folder, "~/Library/Application Support/Claude-xexamplecom-two")
+        XCTAssertNoThrow(try AccountValidation.validate([first, account], home: home))
+        let fresh = SwitchCoordinator.newAccount(email: "y@example.com", organizationUuid: "org-2", organizationName: "Two", accounts: [first], home: home)
+        XCTAssertEqual(fresh.name, "y@example.com", "the organization only joins the name when the email is already taken")
+    }
+
+    func testUnknownOrganizationCreatesASecondAccountForTheEmail() throws {
+        try save(team, refresh: "rt-t")
+        setLive(email: "me@example.com", refresh: "rt-p", organization: "org-p", organizationName: "Personal")
+        try save(play, refresh: "rt-play")
+        let result = try coordinator.switchTo(play.id, accounts: [team, play], state: .empty) { _ in .create }
+        XCTAssertEqual(result.accounts.count, 3)
+        let created = result.accounts[2]
+        XCTAssertEqual(created.name, "me@example.com (Personal)")
+        XCTAssertEqual(created.organizationUuid, "org-p")
+        XCTAssertEqual(result.from, created.id)
+        XCTAssertEqual(try savedRefresh(team.id), LiveLogin.sha256Hex("rt-t"))
+        XCTAssertNoThrow(try AccountValidation.validate(result.accounts, home: home))
     }
 }

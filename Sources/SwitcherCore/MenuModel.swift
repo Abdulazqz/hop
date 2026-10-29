@@ -19,25 +19,25 @@ public struct MenuModel: Equatable {
     public let header: String
     public let sessionsLine: String?
     public let rows: [MenuRow]
-    /// Set when the live login matches no account: show "Save current login (email) as new account…".
-    public let saveCurrentLoginEmail: String?
+    /// Set when the live login matches no account: show "Save current login (email · organization) as new account…".
+    public let saveCurrentLoginLabel: String?
     public let activeAccountID: UUID?
 
     public static func build(accounts: [Account], live: LiveLoginState, state: HopState, savedLoginExpiry: [UUID: Date],
                              hasSavedLogin: Set<UUID>, desktopRunning: Set<UUID>, runningSessions: Int,
                              hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>, now: Date) -> MenuModel {
         var activeID: UUID?
-        var unknownEmail: String?
+        var unknownLogin: String?
         let header: String
         switch live {
         case .loggedIn(let summary):
             let attribution = LoginAttribution.attribute(summary, accounts: accounts, state: state)
             activeID = attribution.accountID
             if let activeID, let account = accounts.first(where: { $0.id == activeID }) {
-                header = "Active: \(account.name) (\(account.email ?? summary.email))"
+                header = "Active: \(account.name) (\(account.loginLabel ?? summary.label))"
             } else {
-                unknownEmail = summary.email
-                header = "Active: \(summary.email) (not saved)"
+                unknownLogin = summary.label
+                header = "Active: \(summary.label) (not saved)"
             }
         case .loggedOut:
             header = "Not logged in"
@@ -65,7 +65,7 @@ public struct MenuModel: Equatable {
             : "\(runningSessions) terminal sessions running · they follow within 8 hours"
 
         return MenuModel(header: header, sessionsLine: sessionsLine, rows: rows,
-                         saveCurrentLoginEmail: unknownEmail, activeAccountID: activeID)
+                         saveCurrentLoginLabel: unknownLogin, activeAccountID: activeID)
     }
 
     static func expirySuffix(_ expiry: Date?, now: Date) -> String {
