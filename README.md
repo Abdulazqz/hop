@@ -53,8 +53,9 @@ how many are running.
 Hop never logs in for you. It saves the login Claude Code already has whenever
 you switch away from it, in the macOS Keychain. To add an account: choose
 **Log in first…** (or run `claude auth login` yourself), sign in as the new
-account, then switch to any other account once. Hop asks where to save the
-login it found.
+account, then switch to any other account once. Hop can't see the new login
+until that switch; it then asks where to keep it, with the account you chose
+**Log in first…** for offered first ("Save as …").
 
 **Open Terminal** switches if needed and opens a Terminal window running
 `claude`. macOS asks once to let Hop control Terminal; allow it. Hop reads and

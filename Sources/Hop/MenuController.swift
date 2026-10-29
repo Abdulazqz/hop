@@ -6,7 +6,7 @@ struct MenuActions {
     var quit: (Account) -> Void
     var switchLogin: (Account) -> Void
     var openTerminal: (Account) -> Void
-    var logInFirst: () -> Void
+    var logInFirst: (Account) -> Void
     var saveCurrentLogin: () -> Void
     var setHotkeyAction: (HotkeyAction) -> Void
     var addAccount: (() -> Void)? = nil
@@ -114,7 +114,7 @@ final class MenuController: NSObject, NSMenuDelegate {
         case .switchLogin:
             sub.addItem(ClosureMenuItem(title: "Switch terminal login") { [weak self] in self?.actions.switchLogin(account) })
         case .logInFirst:
-            sub.addItem(ClosureMenuItem(title: "Log in first…") { [weak self] in self?.actions.logInFirst() })
+            sub.addItem(ClosureMenuItem(title: "Log in first…") { [weak self] in self?.actions.logInFirst(account) })
         }
         sub.addItem(ClosureMenuItem(title: "Open Terminal") { [weak self] in self?.actions.openTerminal(account) })
         sub.addItem(.separator())

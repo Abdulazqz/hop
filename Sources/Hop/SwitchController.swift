@@ -13,6 +13,8 @@ final class SwitchController {
     private let stateURL: URL
     /// False from the command line: an unknown login is reported as an error instead of opening the save dialog.
     private let interactive: Bool
+    /// The account whose "Log in first…" was chosen last; offered first when Hop asks where to keep an unknown login.
+    private(set) var pendingLoginAccountID: UUID?
     private(set) var state: HopState
     private(set) var live: LiveLoginState = .loggedOut
     /// Set once the live data was unrecognized; Switch stays disabled until relaunch.
@@ -71,11 +73,14 @@ final class SwitchController {
             return try attemptSwitch(to: account) { _ in nil }
         } catch SwitchError.cancelled(let login) {
             guard interactive else { return switchFailed(SwitchError.cancelled(login: login)) }
-            guard let choice = UnknownLoginDialog.ask(login: login, candidates: model.accounts.filter { $0.email == nil }) else {
+            guard let choice = UnknownLoginDialog.ask(login: login, target: account.name, candidates: model.accounts.filter { $0.email == nil },
+                                                      preselect: pendingLoginAccountID) else {
                 return false
             }
             do {
-                return try attemptSwitch(to: account) { _ in choice }
+                let switched = try attemptSwitch(to: account) { _ in choice }
+                pendingLoginAccountID = nil
+                return switched
             } catch {
                 return switchFailed(error)
             }
@@ -104,22 +109,26 @@ final class SwitchController {
     }
 
     func openTerminal(_ account: Account) {
-        guard hasSavedLogin(account.id) else { logInFirst(); return }
+        guard hasSavedLogin(account.id) else { logInFirst(for: account); return }
         guard switchTo(account) else { return }
         if !TerminalRunner.open(.claude) { Alerts.terminalAutomationDenied() }
     }
 
-    func logInFirst() {
-        if TerminalRunner.open(.login) { Alerts.logInFirst() } else { Alerts.terminalAutomationDenied() }
+    /// Opens Terminal on `claude auth login`. The login Hop finds at the next switch is offered to `account` first.
+    func logInFirst(for account: Account? = nil) {
+        pendingLoginAccountID = account?.id
+        if TerminalRunner.open(.login) { Alerts.logInFirst(accountName: account?.name) } else { Alerts.terminalAutomationDenied() }
     }
 
     func saveCurrentLogin() {
         refreshLive()
         guard case .loggedIn(let summary) = live else { return }
-        guard let choice = UnknownLoginDialog.ask(login: summary.label, candidates: model.accounts.filter { $0.email == nil }) else { return }
+        guard let choice = UnknownLoginDialog.ask(login: summary.label, target: nil, candidates: model.accounts.filter { $0.email == nil },
+                                                  preselect: pendingLoginAccountID) else { return }
         do {
             let (accounts, newState) = try coordinator.saveCurrentLogin(accounts: model.accounts, state: state, choice: choice)
             try persist(accounts: accounts, state: newState)
+            pendingLoginAccountID = nil
         } catch {
             reportError(error)
         }

@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quit: { [unowned self] in self.launcher.quit($0) },
             switchLogin: { [unowned self] in _ = self.switcher.switchTo($0) },
             openTerminal: { [unowned self] in self.switcher.openTerminal($0) },
-            logInFirst: { [unowned self] in self.switcher.logInFirst() },
+            logInFirst: { [unowned self] in self.switcher.logInFirst(for: $0) },
             saveCurrentLogin: { [unowned self] in self.switcher.saveCurrentLogin() },
             setHotkeyAction: { [unowned self] in self.setHotkeyAction($0) },
             addAccount: { [unowned self] in self.addAccount() },
