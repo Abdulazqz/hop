@@ -23,4 +23,9 @@ final class AppModel {
         tracker.refresh()
         onAccountsChanged?()
     }
+
+    /// Commits only the token marker for one account, independent of any editor's unsaved edits.
+    func setTokenState(_ date: Date?, for id: UUID) throws {
+        try setAccounts(AccountTokens.apply(accounts, tokenAddedAt: date, for: id))
+    }
 }

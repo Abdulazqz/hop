@@ -6,11 +6,13 @@ import SwitcherCore
 final class EditAccountsWindow {
     private let model: AppModel
     private let switcher: SwitchController
+    private let tokenStore: TokenStore
     private var window: NSWindow?
 
-    init(model: AppModel, switcher: SwitchController) {
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore = KeychainTokenStore()) {
         self.model = model
         self.switcher = switcher
+        self.tokenStore = tokenStore
     }
 
     /// Opens a fresh editor (so it always starts from the saved accounts), or fronts the open one.
@@ -20,7 +22,7 @@ final class EditAccountsWindow {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let view = EditAccountsView(model: model, switcher: switcher) { [weak self] in self?.close() }
+        let view = EditAccountsView(model: model, switcher: switcher, tokenStore: tokenStore) { [weak self] in self?.close() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Edit accounts"
         window.styleMask = [.titled, .closable]
@@ -42,6 +44,7 @@ final class EditAccountsWindow {
 private struct EditAccountsView: View {
     let model: AppModel
     let switcher: SwitchController
+    let tokenStore: TokenStore
     let close: () -> Void
     @State private var accounts: [Account]
     @State private var accountsToTrash: [Account] = []
@@ -49,9 +52,10 @@ private struct EditAccountsView: View {
     @State private var forgetPending: Account?
     @State private var error: String?
 
-    init(model: AppModel, switcher: SwitchController, close: @escaping () -> Void) {
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore, close: @escaping () -> Void) {
         self.model = model
         self.switcher = switcher
+        self.tokenStore = tokenStore
         self.close = close
         _accounts = State(initialValue: model.accounts)
     }
@@ -71,6 +75,13 @@ private struct EditAccountsView: View {
                         Text(folderLabel(account))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if account.tokenAddedAt != nil {
+                            Image(systemName: "key.fill").foregroundStyle(.secondary).help("Has a setup-token")
+                            Button("Replace") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                            Button("Remove") { removeToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                        } else {
+                            Button("Add token") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                        }
                         if let login = account.loginLabel {
                             Text(login).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             Button { forgetPending = account } label: { Image(systemName: "key.slash") }
@@ -126,6 +137,40 @@ private struct EditAccountsView: View {
             }
         } message: {
             Text("Hop deletes its copy of that terminal login. Log in again as that account and switch once to save it again.")
+        }
+    }
+
+    private func setToken(for account: Account) {
+        guard let raw = TokenPrompt.paste(accountName: account.name) else { return }
+        do {
+            let token = try SetupToken.normalize(raw)
+            try tokenStore.writeToken(token, for: account.id)
+            let now = Date()
+            try model.setTokenState(now, for: account.id)
+            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = now }
+            error = nil
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    private func removeToken(for account: Account) {
+        do {
+            try tokenStore.deleteToken(account.id)
+            try model.setTokenState(nil, for: account.id)
+            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = nil }
+            error = nil
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    private func message(for error: Error) -> String {
+        switch error {
+        case SetupTokenError.empty: return "Paste the setup-token."
+        case SetupTokenError.wrongPrefix: return "That should start with sk-ant-oat01-."
+        case SetupTokenError.tooShort: return "That setup-token looks too short."
+        default: return error.localizedDescription
         }
     }
 
