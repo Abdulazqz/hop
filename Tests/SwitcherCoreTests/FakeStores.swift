@@ -32,3 +32,10 @@ final class FakeIdentityStore: IdentityDocumentStore {
         self.document = document; writes += 1
     }
 }
+
+final class FakeTokenStore: TokenStore {
+    var tokens: [UUID: String] = [:]
+    func readToken(_ id: UUID) throws -> String? { tokens[id] }
+    func writeToken(_ token: String, for id: UUID) throws { tokens[id] = token }
+    func deleteToken(_ id: UUID) throws { tokens[id] = nil }
+}
