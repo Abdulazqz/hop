@@ -20,8 +20,12 @@ public struct Account: Codable, Equatable, Identifiable {
     /// When the saved terminal login's refresh token expires; shown in the menu without touching the Keychain.
     public var savedLoginExpiresAt: Date?
 
+    /// When Hop stored this account's `claude setup-token` in the Keychain. nil = no token stored.
+    public var tokenAddedAt: Date?
+
     public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil,
-                organizationUuid: String? = nil, organizationName: String? = nil, savedLoginExpiresAt: Date? = nil) {
+                organizationUuid: String? = nil, organizationName: String? = nil, savedLoginExpiresAt: Date? = nil,
+                tokenAddedAt: Date? = nil) {
         self.id = id
         self.name = name
         self.color = color
@@ -30,6 +34,7 @@ public struct Account: Codable, Equatable, Identifiable {
         self.organizationUuid = organizationUuid
         self.organizationName = organizationName
         self.savedLoginExpiresAt = savedLoginExpiresAt
+        self.tokenAddedAt = tokenAddedAt
     }
 
     /// Lower-cased, trimmed email for comparisons; nil when unset or blank.
