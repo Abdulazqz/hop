@@ -49,4 +49,12 @@ final class ClaudeSettingsTests: XCTestCase {
         let disabled = try ClaudeSettings.disableHelper(enabled)
         XCTAssertFalse(ClaudeSettings.isHelperEnabled(disabled, helperPath: helper))
     }
+
+    func testForeignHelperDetected() {
+        let mine = Data(#"{"apiKeyHelper":"/me/.config/hop/x.sh"}"#.utf8)
+        XCTAssertNil(ClaudeSettings.foreignHelper(mine, hopPath: "/me/.config/hop/x.sh"))
+        let theirs = Data(#"{"apiKeyHelper":"/usr/local/bin/other.sh"}"#.utf8)
+        XCTAssertEqual(ClaudeSettings.foreignHelper(theirs, hopPath: "/me/.config/hop/x.sh"), "/usr/local/bin/other.sh")
+        XCTAssertNil(ClaudeSettings.foreignHelper(nil, hopPath: "/me/.config/hop/x.sh"))
+    }
 }

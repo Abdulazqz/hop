@@ -3,9 +3,12 @@ import SwitcherCore
 
 enum HopLoginInstallError: Error, LocalizedError {
     case noInitialActive
+    case foreignHelper(String)
     var errorDescription: String? {
         switch self {
         case .noInitialActive: return "Choose which token-backed account to start active before enabling."
+        case .foreignHelper(let path):
+            return "Your ~/.claude/settings.json already sets apiKeyHelper to \(path). Remove it first if you want Hop to manage the login."
         }
     }
 }
@@ -44,9 +47,13 @@ struct HopLoginInstall {
 
     func enable(initialActive: UUID?) throws {
         guard let initialActive else { throw HopLoginInstallError.noInitialActive }
+        let existing = try? Data(contentsOf: paths.settings)
+        // Never clobber a user's own apiKeyHelper; refuse and let them remove it first.
+        if let foreign = ClaudeSettings.foreignHelper(existing, hopPath: paths.helperScript.path) {
+            throw HopLoginInstallError.foreignHelper(foreign)
+        }
         try writeHelperScript()
         try AtomicFile.write(Data(ActivePointer.content(for: initialActive).utf8), to: paths.pointer)
-        let existing = try? Data(contentsOf: paths.settings)
         let merged = try ClaudeSettings.enableHelper(existing, helperPath: paths.helperScript.path, ttlMs: ttlMs)
         try createParent(of: paths.settings)
         try AtomicFile.write(merged, to: paths.settings)

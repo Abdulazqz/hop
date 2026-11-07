@@ -56,6 +56,15 @@ final class SwitchController {
         }
     }
 
+    /// Clears the active account: removes the pointer file and the recorded active id, so no session
+    /// authenticates as an account that is no longer there. Sessions have no credential until one is chosen.
+    func deactivate() {
+        try? FileManager.default.removeItem(at: pointerURL)
+        state.activeAccountID = nil
+        try? state.save(to: stateURL)
+        onChange?()
+    }
+
     func openTerminal(_ account: Account) {
         guard switchTo(account) else { return }
         if !TerminalRunner.open(.claude) { Alerts.terminalAutomationDenied() }

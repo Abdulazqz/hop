@@ -5,11 +5,13 @@ import SwitcherCore
 @MainActor
 final class EditAccountsWindow {
     private let model: AppModel
+    private let switcher: SwitchController
     private let tokenStore: TokenStore
     private var window: NSWindow?
 
-    init(model: AppModel, tokenStore: TokenStore = KeychainTokenStore()) {
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore = KeychainTokenStore()) {
         self.model = model
+        self.switcher = switcher
         self.tokenStore = tokenStore
     }
 
@@ -20,7 +22,7 @@ final class EditAccountsWindow {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let view = EditAccountsView(model: model, tokenStore: tokenStore) { [weak self] in self?.close() }
+        let view = EditAccountsView(model: model, switcher: switcher, tokenStore: tokenStore) { [weak self] in self?.close() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Edit accounts"
         window.styleMask = [.titled, .closable]
@@ -41,6 +43,7 @@ final class EditAccountsWindow {
 
 private struct EditAccountsView: View {
     let model: AppModel
+    let switcher: SwitchController
     let tokenStore: TokenStore
     let close: () -> Void
     @State private var accounts: [Account]
@@ -48,8 +51,9 @@ private struct EditAccountsView: View {
     @State private var pendingRemoval: Account?
     @State private var error: String?
 
-    init(model: AppModel, tokenStore: TokenStore, close: @escaping () -> Void) {
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore, close: @escaping () -> Void) {
         self.model = model
+        self.switcher = switcher
         self.tokenStore = tokenStore
         self.close = close
         _accounts = State(initialValue: model.accounts)
@@ -162,12 +166,18 @@ private struct EditAccountsView: View {
         model.tracker.refresh()
         let safe = accountsToTrash.filter { canTrashFolder($0) }
         let kept = accountsToTrash.filter { !canTrashFolder($0) }
+        // Decide token/pointer cleanup against the accounts as they are BEFORE the save.
+        let (removedTokenIDs, clearPointer) = AccountRemoval.cleanup(before: model.accounts, after: trimmed,
+                                                                     active: switcher.activeAccountID)
         do {
             try model.setAccounts(trimmed)
         } catch {
             self.error = error.localizedDescription
             return
         }
+        // Don't leave an orphaned token behind, or a pointer naming an account the user just removed.
+        for id in removedTokenIDs { try? tokenStore.deleteToken(id) }
+        if clearPointer { switcher.deactivate() }
         for account in safe {
             let url = URL(fileURLWithPath: FolderPath.normalize(account.folder, home: NSHomeDirectory()))
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)

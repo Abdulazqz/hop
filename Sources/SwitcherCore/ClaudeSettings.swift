@@ -37,6 +37,13 @@ public enum ClaudeSettings {
         return (root["apiKeyHelper"] as? String) == helperPath
     }
 
+    /// An apiKeyHelper already set to something other than `hopPath`, or nil. Enabling over it would clobber it.
+    public static func foreignHelper(_ json: Data?, hopPath: String) -> String? {
+        guard let root = try? object(from: json),
+              let existing = root["apiKeyHelper"] as? String, existing != hopPath else { return nil }
+        return existing
+    }
+
     static func object(from json: Data?) throws -> [String: Any] {
         guard let json, !json.isEmpty else { return [:] }
         guard let any = try? JSONSerialization.jsonObject(with: json),

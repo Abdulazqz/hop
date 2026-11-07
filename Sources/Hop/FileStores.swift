@@ -6,9 +6,9 @@ enum HopStateFile {
 }
 
 enum ActivePointerFile {
-    static var url: URL { AccountStore.defaultURL.deletingLastPathComponent().appendingPathComponent("active-account") }
+    static var url: URL { URL(fileURLWithPath: HopLoginFiles.pointer(home: NSHomeDirectory())) }
 }
 
 enum HopHelperScriptFile {
-    static var url: URL { AccountStore.defaultURL.deletingLastPathComponent().appendingPathComponent("hop-apikeyhelper.sh") }
+    static var url: URL { URL(fileURLWithPath: HopLoginFiles.helperScript(home: NSHomeDirectory())) }
 }
