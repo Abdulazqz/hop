@@ -19,14 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launcher = Launcher(model: model)
         switcher = SwitchController(model: model)
         switcher.onChange = { [unowned self] in self.menu.rebuild() }
-        editWindow = EditAccountsWindow(model: model, switcher: switcher)
+        editWindow = EditAccountsWindow(model: model)
         menu = MenuController(model: model, actions: MenuActions(
             open: { [unowned self] in self.launcher.open($0) },
             quit: { [unowned self] in self.launcher.quit($0) },
             switchLogin: { [unowned self] in _ = self.switcher.switchTo($0) },
             openTerminal: { [unowned self] in self.switcher.openTerminal($0) },
-            logInFirst: { [unowned self] in self.switcher.logInFirst(for: $0) },
-            saveCurrentLogin: { [unowned self] in self.switcher.saveCurrentLogin() },
             setHotkeyAction: { [unowned self] in self.setHotkeyAction($0) },
             addAccount: { [unowned self] in self.addAccount() },
             editAccounts: { [unowned self] in self.editWindow.show() },
@@ -34,8 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         menu.hotkeyAction = hotkeyAction
         menu.modelProvider = { [unowned self] in
-            self.switcher.refreshLive()
-            return self.switcher.menuModel(desktopRunning: Set(self.model.tracker.running.keys),
+            self.switcher.menuModel(desktopRunning: Set(self.model.tracker.running.keys),
                                            hotkeyAction: self.hotkeyAction, hotkeyPositions: self.hotkeys.registered)
         }
         menu.hopLoginEnabled = { [unowned self] in self.hopLogin.isEnabled() }

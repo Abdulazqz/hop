@@ -6,8 +6,6 @@ struct MenuActions {
     var quit: (Account) -> Void
     var switchLogin: (Account) -> Void
     var openTerminal: (Account) -> Void
-    var logInFirst: (Account) -> Void
-    var saveCurrentLogin: () -> Void
     var setHotkeyAction: (HotkeyAction) -> Void
     var addAccount: (() -> Void)? = nil
     var editAccounts: (() -> Void)? = nil

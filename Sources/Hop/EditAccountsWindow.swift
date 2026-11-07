@@ -5,13 +5,11 @@ import SwitcherCore
 @MainActor
 final class EditAccountsWindow {
     private let model: AppModel
-    private let switcher: SwitchController
     private let tokenStore: TokenStore
     private var window: NSWindow?
 
-    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore = KeychainTokenStore()) {
+    init(model: AppModel, tokenStore: TokenStore = KeychainTokenStore()) {
         self.model = model
-        self.switcher = switcher
         self.tokenStore = tokenStore
     }
 
@@ -22,7 +20,7 @@ final class EditAccountsWindow {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let view = EditAccountsView(model: model, switcher: switcher, tokenStore: tokenStore) { [weak self] in self?.close() }
+        let view = EditAccountsView(model: model, tokenStore: tokenStore) { [weak self] in self?.close() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Edit accounts"
         window.styleMask = [.titled, .closable]
@@ -43,18 +41,15 @@ final class EditAccountsWindow {
 
 private struct EditAccountsView: View {
     let model: AppModel
-    let switcher: SwitchController
     let tokenStore: TokenStore
     let close: () -> Void
     @State private var accounts: [Account]
     @State private var accountsToTrash: [Account] = []
     @State private var pendingRemoval: Account?
-    @State private var forgetPending: Account?
     @State private var error: String?
 
-    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore, close: @escaping () -> Void) {
+    init(model: AppModel, tokenStore: TokenStore, close: @escaping () -> Void) {
         self.model = model
-        self.switcher = switcher
         self.tokenStore = tokenStore
         self.close = close
         _accounts = State(initialValue: model.accounts)
@@ -81,12 +76,6 @@ private struct EditAccountsView: View {
                             Button("Remove") { removeToken(for: account) }.buttonStyle(.borderless).font(.caption)
                         } else {
                             Button("Add token") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
-                        }
-                        if let login = account.loginLabel {
-                            Text(login).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                            Button { forgetPending = account } label: { Image(systemName: "key.slash") }
-                                .buttonStyle(.borderless)
-                                .help("Forget saved login")
                         }
                         Button { pendingRemoval = account } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
@@ -118,25 +107,6 @@ private struct EditAccountsView: View {
             } onCancel: {
                 pendingRemoval = nil
             }
-        }
-        .confirmationDialog("Forget the saved login for \(forgetPending?.name ?? "")?", isPresented: Binding(get: { forgetPending != nil }, set: { if !$0 { forgetPending = nil } })) {
-            Button("Forget", role: .destructive) {
-                guard let account = forgetPending else { return }
-                do {
-                    try switcher.forgetSavedLogin(account)
-                    if let index = accounts.firstIndex(where: { $0.id == account.id }) {
-                        accounts[index].email = nil
-                        accounts[index].organizationUuid = nil
-                        accounts[index].organizationName = nil
-                        accounts[index].savedLoginExpiresAt = nil
-                    }
-                } catch {
-                    self.error = error.localizedDescription
-                }
-                forgetPending = nil
-            }
-        } message: {
-            Text("Hop deletes its copy of that terminal login. Log in again as that account and switch once to save it again.")
         }
     }
 
@@ -184,7 +154,6 @@ private struct EditAccountsView: View {
     }
 
     private func save() {
-        let originalIDs = Set(model.accounts.map(\.id))
         let trimmed = accounts.map { account -> Account in
             var account = account
             account.name = account.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -199,7 +168,6 @@ private struct EditAccountsView: View {
             self.error = error.localizedDescription
             return
         }
-        switcher.deleteSavedLogins(for: Array(originalIDs.subtracting(trimmed.map(\.id))))
         for account in safe {
             let url = URL(fileURLWithPath: FolderPath.normalize(account.folder, home: NSHomeDirectory()))
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)

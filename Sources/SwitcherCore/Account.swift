@@ -17,14 +17,11 @@ public struct Account: Codable, Equatable, Identifiable {
     /// nil = not recorded yet (saved before Hop tracked organizations); learned from the saved login on the next switch.
     public var organizationUuid: String?
     public var organizationName: String?
-    /// When the saved terminal login's refresh token expires; shown in the menu without touching the Keychain.
-    public var savedLoginExpiresAt: Date?
-
     /// When Hop stored this account's `claude setup-token` in the Keychain. nil = no token stored.
     public var tokenAddedAt: Date?
 
     public init(id: UUID = UUID(), name: String, color: AccountColor, folder: String?, email: String? = nil,
-                organizationUuid: String? = nil, organizationName: String? = nil, savedLoginExpiresAt: Date? = nil,
+                organizationUuid: String? = nil, organizationName: String? = nil,
                 tokenAddedAt: Date? = nil) {
         self.id = id
         self.name = name
@@ -33,7 +30,6 @@ public struct Account: Codable, Equatable, Identifiable {
         self.email = email
         self.organizationUuid = organizationUuid
         self.organizationName = organizationName
-        self.savedLoginExpiresAt = savedLoginExpiresAt
         self.tokenAddedAt = tokenAddedAt
     }
 
@@ -43,9 +39,11 @@ public struct Account: Codable, Equatable, Identifiable {
     /// Trimmed organization id for comparisons; nil when unset or blank.
     public var normalizedOrganizationUuid: String? { Self.normalized(organizationUuid) }
 
-    /// "email · organization" for display; nil without a saved login.
+    /// "email · organization" for display; nil without a recorded email.
     public var loginLabel: String? {
-        email.map { LoginSummary.label(email: $0, organizationName: organizationName) }
+        guard let email = Self.normalized(email) else { return nil }
+        guard let organizationName = Self.normalized(organizationName) else { return email }
+        return "\(email) · \(organizationName)"
     }
 
     static func normalized(_ value: String?) -> String? {

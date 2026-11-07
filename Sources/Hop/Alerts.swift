@@ -21,14 +21,6 @@ enum Alerts {
              "Allow Hop to control Terminal in System Settings › Privacy & Security › Automation, then try again.")
     }
 
-    static func logInFirst(accountName: String? = nil) {
-        let who = accountName.map { "the account you want for \u{201c}\($0)\u{201d}" } ?? "the account you want"
-        let save = accountName.map { "pick \u{201c}Save as \($0)\u{201d}" } ?? "pick where to keep it"
-        show("Log in, then switch once",
-             "Terminal is opening so you can run claude auth login. Sign in as \(who); if it belongs to more than one organization, choose the one you mean. "
-             + "Hop only sees the new login when you next switch: choose any other account once, and when Hop asks where to keep the login, \(save).")
-    }
-
     static func switchFailed(_ error: Error) {
         show("Couldn't switch", error.localizedDescription)
     }

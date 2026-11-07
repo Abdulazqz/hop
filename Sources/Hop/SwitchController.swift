@@ -1,52 +1,26 @@
 import AppKit
 import SwitcherCore
 
-/// Glues SwitchCoordinator to the model, the stores, alerts, and Terminal.
-/// Reads the Keychain only inside switchTo, saveCurrentLogin, forgetSavedLogin and deleteSavedLogins;
-/// everything shown in the menu comes from ~/.claude.json and the accounts file.
+/// Switches the active account by flipping the pointer file the apiKeyHelper reads; every running
+/// `claude` session adopts it on its next stale request. Desktop-profile launching is unchanged.
 @MainActor
 final class SwitchController {
     private let model: AppModel
-    private let logins: LoginStore
-    private let identityDocument: IdentityDocumentStore
-    private let coordinator: SwitchCoordinator
     private let stateURL: URL
     /// Where the active-account pointer is written; the apiKeyHelper reads this same file.
     private let pointerURL: URL
-    /// False from the command line: an unknown login is reported as an error instead of opening the save dialog.
-    private let interactive: Bool
-    /// The account whose "Log in first…" was chosen last; offered first when Hop asks where to keep an unknown login.
-    private(set) var pendingLoginAccountID: UUID?
     private(set) var state: HopState
-    private(set) var live: LiveLoginState = .loggedOut
-    /// Set once the live data was unrecognized; Switch stays disabled until relaunch.
-    private(set) var loginFormatBroken = false
     var onChange: (() -> Void)?
     /// Where failures go: an alert in the app, a printed line in the CLI.
     var reportError: (Error) -> Void = { Alerts.switchFailed($0) }
 
-    init(model: AppModel, logins: LoginStore = KeychainLoginStore(),
-         identityDocument: IdentityDocumentStore = IdentityDocumentFile(), stateURL: URL = HopStateFile.url,
-         pointerURL: URL = ActivePointerFile.url,
-         interactive: Bool = true, reportError: ((Error) -> Void)? = nil) {
+    init(model: AppModel, stateURL: URL = HopStateFile.url, pointerURL: URL = ActivePointerFile.url,
+         reportError: ((Error) -> Void)? = nil) {
         self.model = model
-        self.logins = logins
-        self.identityDocument = identityDocument
         self.stateURL = stateURL
         self.pointerURL = pointerURL
-        self.interactive = interactive
         self.state = HopState.load(from: stateURL)
-        self.coordinator = SwitchCoordinator(logins: logins, identityDocument: identityDocument, home: NSHomeDirectory())
         if let reportError { self.reportError = reportError }
-        refreshLive()
-    }
-
-    func refreshLive() {
-        live = LiveLogin.parseIdentityOnly(identityDocument: try? identityDocument.read())
-        if case .unrecognized = live, !loginFormatBroken {
-            loginFormatBroken = true
-            reportError(SwitchError.unrecognizedLogin(reason(of: live)))
-        }
     }
 
     /// The active account, read from the pointer file (the single source of truth the apiKeyHelper reads).
@@ -55,8 +29,6 @@ final class SwitchController {
         return ActivePointer.parse(text)
     }
 
-    func hasSavedLogin(_ id: UUID) -> Bool { model.accounts.first { $0.id == id }?.email != nil }
-
     func menuModel(desktopRunning: Set<UUID>, hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
         MenuModel.build(accounts: model.accounts, activeAccountID: activeAccountID,
                         tokenBacked: Set(model.accounts.filter { $0.tokenAddedAt != nil }.map(\.id)),
@@ -64,9 +36,8 @@ final class SwitchController {
                         hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions)
     }
 
-    /// Switches the active account by flipping the pointer file (atomically), so every running session's
-    /// next stale request adopts it. Refuses an account with no stored setup-token — pointing the helper at
-    /// an empty account would make sessions fall back instead of switching. Returns true on success.
+    /// Flips the pointer file (atomically) so every running session's next stale request adopts the account.
+    /// Refuses an account with no stored setup-token. Returns true on success.
     @discardableResult
     func switchTo(_ account: Account) -> Bool {
         guard account.tokenAddedAt != nil else {
@@ -88,61 +59,5 @@ final class SwitchController {
     func openTerminal(_ account: Account) {
         guard switchTo(account) else { return }
         if !TerminalRunner.open(.claude) { Alerts.terminalAutomationDenied() }
-    }
-
-    /// Opens Terminal on `claude auth login`. The login Hop finds at the next switch is offered to `account` first.
-    func logInFirst(for account: Account? = nil) {
-        pendingLoginAccountID = account?.id
-        if TerminalRunner.open(.login) { Alerts.logInFirst(accountName: account?.name) } else { Alerts.terminalAutomationDenied() }
-    }
-
-    func saveCurrentLogin() {
-        refreshLive()
-        guard case .loggedIn(let summary) = live else { return }
-        guard let choice = UnknownLoginDialog.ask(login: summary.label, target: nil, candidates: model.accounts.filter { $0.email == nil },
-                                                  preselect: pendingLoginAccountID) else { return }
-        do {
-            let (accounts, newState) = try coordinator.saveCurrentLogin(accounts: model.accounts, state: state, choice: choice)
-            try persist(accounts: accounts, state: newState)
-            pendingLoginAccountID = nil
-        } catch {
-            reportError(error)
-        }
-    }
-
-    func forgetSavedLogin(_ account: Account) throws {
-        if activeAccountID == account.id { throw SwitchError.store("\(account.name) is the active account. Switch to another account first.") }
-        try logins.deleteSaved(account.id)
-        var accounts = model.accounts
-        if let index = accounts.firstIndex(where: { $0.id == account.id }) {
-            accounts[index].email = nil
-            accounts[index].organizationUuid = nil
-            accounts[index].organizationName = nil
-            accounts[index].savedLoginExpiresAt = nil
-        }
-        try model.setAccounts(accounts)
-        if state.activeAccountID == account.id {
-            // The recorded hash pointed at the login just deleted; keep it from attributing anything to this account.
-            state = .empty
-            try state.save(to: stateURL)
-        }
-        onChange?()
-    }
-
-    func deleteSavedLogins(for ids: [UUID]) {
-        for id in ids { try? logins.deleteSaved(id) }
-    }
-
-    private func persist(accounts: [Account], state newState: HopState) throws {
-        if accounts != model.accounts { try model.setAccounts(accounts) }
-        state = newState
-        try state.save(to: stateURL)
-        refreshLive()
-        onChange?()
-    }
-
-    private func reason(of state: LiveLoginState) -> String {
-        if case .unrecognized(let why) = state { return why }
-        return ""
     }
 }
