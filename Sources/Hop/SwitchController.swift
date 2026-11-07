@@ -11,6 +11,8 @@ final class SwitchController {
     private let identityDocument: IdentityDocumentStore
     private let coordinator: SwitchCoordinator
     private let stateURL: URL
+    /// Where the active-account pointer is written; the apiKeyHelper reads this same file.
+    private let pointerURL: URL
     /// False from the command line: an unknown login is reported as an error instead of opening the save dialog.
     private let interactive: Bool
     /// The account whose "Log in first…" was chosen last; offered first when Hop asks where to keep an unknown login.
@@ -25,11 +27,13 @@ final class SwitchController {
 
     init(model: AppModel, logins: LoginStore = KeychainLoginStore(),
          identityDocument: IdentityDocumentStore = IdentityDocumentFile(), stateURL: URL = HopStateFile.url,
+         pointerURL: URL = ActivePointerFile.url,
          interactive: Bool = true, reportError: ((Error) -> Void)? = nil) {
         self.model = model
         self.logins = logins
         self.identityDocument = identityDocument
         self.stateURL = stateURL
+        self.pointerURL = pointerURL
         self.interactive = interactive
         self.state = HopState.load(from: stateURL)
         self.coordinator = SwitchCoordinator(logins: logins, identityDocument: identityDocument, home: NSHomeDirectory())
@@ -45,71 +49,43 @@ final class SwitchController {
         }
     }
 
+    /// The active account, read from the pointer file (the single source of truth the apiKeyHelper reads).
     var activeAccountID: UUID? {
-        guard case .loggedIn(let summary) = live else { return nil }
-        return LoginAttribution.attribute(summary, accounts: model.accounts, state: state).accountID
+        guard let text = try? String(contentsOf: pointerURL, encoding: .utf8) else { return nil }
+        return ActivePointer.parse(text)
     }
 
     func hasSavedLogin(_ id: UUID) -> Bool { model.accounts.first { $0.id == id }?.email != nil }
 
     func menuModel(desktopRunning: Set<UUID>, hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
-        MenuModel.build(accounts: model.accounts, live: live, state: state,
-                        savedLoginExpiry: Dictionary(uniqueKeysWithValues: model.accounts.compactMap { a in a.savedLoginExpiresAt.map { (a.id, $0) } }),
-                        hasSavedLogin: Set(model.accounts.filter { $0.email != nil }.map(\.id)),
+        MenuModel.build(accounts: model.accounts, activeAccountID: activeAccountID,
+                        tokenBacked: Set(model.accounts.filter { $0.tokenAddedAt != nil }.map(\.id)),
                         desktopRunning: desktopRunning, runningSessions: RunningSessions.count(),
-                        hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions, now: Date())
+                        hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions)
     }
 
-    /// Returns true when the account is now active (was already, or the switch succeeded).
-    /// Always runs the coordinator, even when the menu already shows the account as active, so a wiped
-    /// Keychain item or a rewritten identity file gets repaired.
+    /// Switches the active account by flipping the pointer file (atomically), so every running session's
+    /// next stale request adopts it. Refuses an account with no stored setup-token — pointing the helper at
+    /// an empty account would make sessions fall back instead of switching. Returns true on success.
     @discardableResult
     func switchTo(_ account: Account) -> Bool {
-        guard !loginFormatBroken else { reportError(SwitchError.unrecognizedLogin("see the earlier alert")); return false }
-        refreshLive()
-        // First pass never blocks: an unknown login comes back as .cancelled, so ~/.claude.json isn't held
-        // across the dialog. The second pass re-reads everything with the user's answer.
-        do {
-            return try attemptSwitch(to: account) { _ in nil }
-        } catch SwitchError.cancelled(let login) {
-            guard interactive else { return switchFailed(SwitchError.cancelled(login: login)) }
-            guard let choice = UnknownLoginDialog.ask(login: login, target: account.name, candidates: model.accounts.filter { $0.email == nil },
-                                                      preselect: pendingLoginAccountID) else {
-                return false
-            }
-            do {
-                let switched = try attemptSwitch(to: account) { _ in choice }
-                pendingLoginAccountID = nil
-                return switched
-            } catch {
-                return switchFailed(error)
-            }
-        } catch {
-            return switchFailed(error)
+        guard account.tokenAddedAt != nil else {
+            reportError(SwitchError.store("\(account.name) has no setup-token yet. Add one in Edit accounts first."))
+            return false
         }
-    }
-
-    /// One coordinator run: persists on success; "already active" counts as success.
-    private func attemptSwitch(to account: Account, resolveUnknown: (String) -> UnknownLoginChoice?) throws -> Bool {
         do {
-            let result = try coordinator.switchTo(account.id, accounts: model.accounts, state: state, resolveUnknown: resolveUnknown)
-            try persist(accounts: result.accounts, state: result.state)
-        } catch SwitchError.alreadyActive {
-            refreshLive()
+            try AtomicFile.write(Data(ActivePointer.content(for: account.id).utf8), to: pointerURL)
+            state.activeAccountID = account.id
+            try state.save(to: stateURL)
             onChange?()
+            return true
+        } catch {
+            reportError(error)
+            return false
         }
-        return true
-    }
-
-    private func switchFailed(_ error: Error) -> Bool {
-        reportError(error)
-        refreshLive()
-        onChange?()
-        return false
     }
 
     func openTerminal(_ account: Account) {
-        guard hasSavedLogin(account.id) else { logInFirst(for: account); return }
         guard switchTo(account) else { return }
         if !TerminalRunner.open(.claude) { Alerts.terminalAutomationDenied() }
     }

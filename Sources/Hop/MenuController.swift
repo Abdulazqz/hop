@@ -57,9 +57,9 @@ final class MenuController: NSObject, NSMenuDelegate {
 
     func rebuild() {
         menu.removeAllItems()
-        let computed = modelProvider?() ?? MenuModel.build(accounts: [], live: .loggedOut, state: .empty, savedLoginExpiry: [:],
-                                                            hasSavedLogin: [], desktopRunning: [], runningSessions: 0,
-                                                            hotkeyAction: hotkeyAction, hotkeyPositions: [], now: Date())
+        let computed = modelProvider?() ?? MenuModel.build(accounts: [], activeAccountID: nil, tokenBacked: [],
+                                                            desktopRunning: [], runningSessions: 0,
+                                                            hotkeyAction: hotkeyAction, hotkeyPositions: [])
         updateIcon(activeID: computed.activeAccountID)
 
         if !computed.header.isEmpty {
@@ -83,9 +83,6 @@ final class MenuController: NSObject, NSMenuDelegate {
             menu.addItem(accountItem(account, row: row))
         }
         menu.addItem(.separator())
-        if let login = computed.saveCurrentLoginLabel {
-            menu.addItem(ClosureMenuItem(title: "Save current login (\(login)) as new account…") { [weak self] in self?.actions.saveCurrentLogin() })
-        }
         if let add = actions.addAccount { menu.addItem(ClosureMenuItem(title: "Add account…", handler: add)) }
         if let edit = actions.editAccounts { menu.addItem(ClosureMenuItem(title: "Edit accounts…", handler: edit)) }
         menu.addItem(hotkeysItem())
@@ -119,11 +116,15 @@ final class MenuController: NSObject, NSMenuDelegate {
             active.state = .on
             sub.addItem(active)
         case .switchLogin:
-            sub.addItem(ClosureMenuItem(title: "Switch terminal login") { [weak self] in self?.actions.switchLogin(account) })
-        case .logInFirst:
-            sub.addItem(ClosureMenuItem(title: "Log in first…") { [weak self] in self?.actions.logInFirst(account) })
+            sub.addItem(ClosureMenuItem(title: "Switch to this account") { [weak self] in self?.actions.switchLogin(account) })
+        case .needsToken:
+            let needs = ClosureMenuItem(title: "Add a setup-token…") { [weak self] in self?.actions.editAccounts?() }
+            needs.isEnabled = actions.editAccounts != nil
+            sub.addItem(needs)
         }
-        sub.addItem(ClosureMenuItem(title: "Open Terminal") { [weak self] in self?.actions.openTerminal(account) })
+        if row.terminalLabel == .openTerminal {
+            sub.addItem(ClosureMenuItem(title: "Open Terminal") { [weak self] in self?.actions.openTerminal(account) })
+        }
         sub.addItem(.separator())
         if ClaudeApp.url != nil {
             let open = ClosureMenuItem(title: row.desktopLabel) { [weak self] in self?.actions.open(account) }

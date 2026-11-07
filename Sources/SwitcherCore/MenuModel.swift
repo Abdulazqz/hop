@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SwitchLabel: Equatable { case active, switchLogin, logInFirst }
+public enum SwitchLabel: Equatable { case active, switchLogin, needsToken }
 public enum TerminalLabel: Equatable { case openTerminal, logInFirst }
 
 public struct MenuRow: Equatable {
@@ -14,68 +14,40 @@ public struct MenuRow: Equatable {
     public let desktopLabel: String
 }
 
-/// Everything the status menu shows, computed without AppKit so it can be tested.
+/// Everything the status menu shows, computed without AppKit so it can be tested. The active account
+/// comes from the pointer (the same file the apiKeyHelper reads); a row is token-backed when Hop holds
+/// a setup-token for it.
 public struct MenuModel: Equatable {
     public let header: String
     public let sessionsLine: String?
     public let rows: [MenuRow]
-    /// Set when the live login matches no account: show "Save current login (email · organization) as new account…".
-    public let saveCurrentLoginLabel: String?
     public let activeAccountID: UUID?
 
-    public static func build(accounts: [Account], live: LiveLoginState, state: HopState, savedLoginExpiry: [UUID: Date],
-                             hasSavedLogin: Set<UUID>, desktopRunning: Set<UUID>, runningSessions: Int,
-                             hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>, now: Date) -> MenuModel {
-        var activeID: UUID?
-        var unknownLogin: String?
-        let header: String
-        switch live {
-        case .loggedIn(let summary):
-            let attribution = LoginAttribution.attribute(summary, accounts: accounts, state: state)
-            activeID = attribution.accountID
-            if let activeID, let account = accounts.first(where: { $0.id == activeID }) {
-                // The account's own identity, with the live organization filled in when the account hasn't recorded one.
-                let label = LoginSummary.label(email: account.email ?? summary.email,
-                                               organizationName: account.organizationName ?? summary.organizationName)
-                header = "Active: \(account.name) (\(label))"
-            } else {
-                unknownLogin = summary.label
-                header = "Active: \(summary.label) (not saved)"
-            }
-        case .loggedOut:
-            header = "Not logged in"
-        case .unrecognized:
-            header = "Login format not recognized"
-        }
+    public static func build(accounts: [Account], activeAccountID: UUID?, tokenBacked: Set<UUID>,
+                             desktopRunning: Set<UUID>, runningSessions: Int,
+                             hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
+        let activeName = activeAccountID.flatMap { id in accounts.first { $0.id == id }?.name }
+        let header = activeName.map { "Active: \($0)" } ?? "No account active"
 
         let rows = accounts.enumerated().map { position, account -> MenuRow in
-            let isActive = account.id == activeID
+            let isActive = account.id == activeAccountID
+            let backed = tokenBacked.contains(account.id)
             let running = desktopRunning.contains(account.id)
-            let saved = hasSavedLogin.contains(account.id)
             return MenuRow(
                 accountID: account.id,
-                title: account.name + (saved ? expirySuffix(savedLoginExpiry[account.id], now: now) : ""),
+                title: account.name,
                 hint: hotkeyAction != .off && hotkeyPositions.contains(position) ? "⌃⌥\(position + 1)" : nil,
                 isActive: isActive,
                 desktopRunning: running,
-                switchLabel: isActive ? .active : (saved ? .switchLogin : .logInFirst),
-                terminalLabel: saved ? .openTerminal : .logInFirst,
+                switchLabel: isActive ? .active : (backed ? .switchLogin : .needsToken),
+                terminalLabel: backed ? .openTerminal : .logInFirst,
                 desktopLabel: running ? "Bring Claude app to front" : "Open Claude app")
         }
 
         let sessionsLine: String? = runningSessions == 0 ? nil
-            : runningSessions == 1 ? "1 terminal session running · it follows within 8 hours"
-            : "\(runningSessions) terminal sessions running · they follow within 8 hours"
+            : runningSessions == 1 ? "1 terminal session running · it follows on its next turn"
+            : "\(runningSessions) terminal sessions running · they follow on their next turn"
 
-        return MenuModel(header: header, sessionsLine: sessionsLine, rows: rows,
-                         saveCurrentLoginLabel: unknownLogin, activeAccountID: activeID)
-    }
-
-    static func expirySuffix(_ expiry: Date?, now: Date) -> String {
-        guard let expiry else { return "" }
-        let seconds = expiry.timeIntervalSince(now)
-        if seconds <= 0 { return " · login expired" }
-        let days = Int(seconds / 86_400)
-        return days < 7 ? " · login expires in \(days) day\(days == 1 ? "" : "s")" : ""
+        return MenuModel(header: header, sessionsLine: sessionsLine, rows: rows, activeAccountID: activeAccountID)
     }
 }

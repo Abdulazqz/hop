@@ -40,7 +40,6 @@ enum CLI {
                 let mark = account.id == active ? "*" : " "
                 print("\(i + 1)\t\(mark)\t\(account.name)\t\(account.loginLabel ?? "-")\t\(desktop)\t\(account.folder ?? FolderPath.defaultProfile)")
             }
-            if case .loggedIn(let s) = switcher.live, active == nil { print("terminal login \(s.label) isn't saved in Hop") }
             return 0
         }
 
@@ -56,11 +55,6 @@ enum CLI {
         }
         if args[0] == "switch" {
             let switcher = SwitchController(model: model, interactive: false) { print("error: \($0.localizedDescription)") }
-            let live = switcher.live
-            if case .loggedIn(let s) = live, switcher.activeAccountID == nil {
-                print("error: current login (\(s.label)) isn't saved; save it from the menu first")
-                return 1
-            }
             let ok = switcher.switchTo(account)
             print(ok ? "active: \(account.name)" : "switch failed")
             return ok ? 0 : 1
