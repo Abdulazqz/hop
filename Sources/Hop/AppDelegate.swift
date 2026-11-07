@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menu: MenuController!
     private var editWindow: EditAccountsWindow!
     private let hotkeys = Hotkeys()
+    private let hopLogin = HopLoginInstall()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let fileURL = AccountStore.defaultURL
@@ -28,7 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             saveCurrentLogin: { [unowned self] in self.switcher.saveCurrentLogin() },
             setHotkeyAction: { [unowned self] in self.setHotkeyAction($0) },
             addAccount: { [unowned self] in self.addAccount() },
-            editAccounts: { [unowned self] in self.editWindow.show() }
+            editAccounts: { [unowned self] in self.editWindow.show() },
+            toggleHopLogin: { [unowned self] in self.toggleHopLogin() }
         ))
         menu.hotkeyAction = hotkeyAction
         menu.modelProvider = { [unowned self] in
@@ -36,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return self.switcher.menuModel(desktopRunning: Set(self.model.tracker.running.keys),
                                            hotkeyAction: self.hotkeyAction, hotkeyPositions: self.hotkeys.registered)
         }
+        menu.hopLoginEnabled = { [unowned self] in self.hopLogin.isEnabled() }
         model.tracker.onChange = { [unowned self] in self.menu.rebuild() }
         model.onAccountsChanged = { [unowned self] in self.accountsChanged() }
         accountsChanged()
@@ -85,5 +88,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func addAccount() {
         editWindow.close()   // an open editor would overwrite the new account on Save
         if let account = AddAccountFlow.run(model: model) { launcher.open(account) }
+    }
+
+    private func toggleHopLogin() {
+        if hopLogin.isEnabled() {
+            guard Alerts.confirmDisableHopLogin() else { return }
+            do { try hopLogin.disable() } catch { Alerts.switchFailed(error) }
+        } else {
+            let initial = model.accounts.first(where: { $0.tokenAddedAt != nil })?.id
+            if let reason = HopLoginGate.blockReason(accounts: model.accounts, initialActive: initial) {
+                Alerts.hopLoginNotReady(reason)
+                return
+            }
+            let name = model.accounts.first(where: { $0.id == initial })?.name ?? ""
+            guard Alerts.confirmEnableHopLogin(startAccount: name) else { return }
+            do { try hopLogin.enable(initialActive: initial) } catch { Alerts.switchFailed(error) }
+        }
+        menu.rebuild()
     }
 }

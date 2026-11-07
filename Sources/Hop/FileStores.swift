@@ -27,3 +27,7 @@ enum HopStateFile {
 enum ActivePointerFile {
     static var url: URL { AccountStore.defaultURL.deletingLastPathComponent().appendingPathComponent("active-account") }
 }
+
+enum HopHelperScriptFile {
+    static var url: URL { AccountStore.defaultURL.deletingLastPathComponent().appendingPathComponent("hop-apikeyhelper.sh") }
+}

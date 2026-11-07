@@ -51,4 +51,33 @@ enum Alerts {
         show("Your accounts file couldn't be read",
              "It was saved as accounts.json.bad and replaced with the default three accounts.")
     }
+
+    /// A two-button confirm; true when the user picks the primary (first) button.
+    static func confirm(_ message: String, _ info: String, confirmTitle: String, cancelTitle: String = "Cancel") -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: cancelTitle)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    static func confirmEnableHopLogin(startAccount: String) -> Bool {
+        confirm("Make Hop your Claude login?",
+                "Every claude session on this Mac \u{2014} this app, your terminal sessions, anything using claude \u{2014} will "
+                + "authenticate through Hop and start as \u{201c}\(startAccount)\u{201d}. Switching in Hop then moves them all live. "
+                + "Your Keychain login is left untouched; turn this off any time to go back to it.",
+                confirmTitle: "Enable")
+    }
+
+    static func confirmDisableHopLogin() -> Bool {
+        confirm("Stop using Hop as your Claude login?",
+                "Claude Code goes back to its normal Keychain login right away. Your stored tokens stay in the Keychain, so you can re-enable any time.",
+                confirmTitle: "Turn Off")
+    }
+
+    static func hopLoginNotReady(_ reason: String) {
+        show("Not ready to enable Hop login", reason)
+    }
 }

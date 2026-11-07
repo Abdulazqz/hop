@@ -31,6 +31,12 @@ public enum ClaudeSettings {
         return try data(from: root)
     }
 
+    /// True iff the settings already name exactly this helper path.
+    public static func isHelperEnabled(_ json: Data?, helperPath: String) -> Bool {
+        guard let root = try? object(from: json) else { return false }
+        return (root["apiKeyHelper"] as? String) == helperPath
+    }
+
     static func object(from json: Data?) throws -> [String: Any] {
         guard let json, !json.isEmpty else { return [:] }
         guard let any = try? JSONSerialization.jsonObject(with: json),

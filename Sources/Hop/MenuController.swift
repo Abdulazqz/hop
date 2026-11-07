@@ -11,6 +11,7 @@ struct MenuActions {
     var setHotkeyAction: (HotkeyAction) -> Void
     var addAccount: (() -> Void)? = nil
     var editAccounts: (() -> Void)? = nil
+    var toggleHopLogin: (() -> Void)? = nil
 }
 
 @MainActor
@@ -23,6 +24,8 @@ final class MenuController: NSObject, NSMenuDelegate {
     var hotkeyPositions: Set<Int> = []
     /// Supplies the computed menu each rebuild; set by AppDelegate.
     var modelProvider: (() -> MenuModel)?
+    /// Whether Hop is currently the Claude login; set by AppDelegate so the toggle item shows the right label.
+    var hopLoginEnabled: (() -> Bool)?
     var hotkeyAction: HotkeyAction = .default
     private static let symbolIcon = NSImage(systemSymbolName: "person.2", accessibilityDescription: "Claude accounts")
 
@@ -86,6 +89,10 @@ final class MenuController: NSObject, NSMenuDelegate {
         if let add = actions.addAccount { menu.addItem(ClosureMenuItem(title: "Add account…", handler: add)) }
         if let edit = actions.editAccounts { menu.addItem(ClosureMenuItem(title: "Edit accounts…", handler: edit)) }
         menu.addItem(hotkeysItem())
+        if let toggle = actions.toggleHopLogin {
+            let on = hopLoginEnabled?() ?? false
+            menu.addItem(ClosureMenuItem(title: on ? "Stop using Hop as my Claude login" : "Use Hop as my Claude login\u{2026}", handler: toggle))
+        }
         let login = ClosureMenuItem(title: "Launch at login") { LoginItem.toggle() }
         login.state = LoginItem.isEnabled ? .on : .off
         menu.addItem(login)

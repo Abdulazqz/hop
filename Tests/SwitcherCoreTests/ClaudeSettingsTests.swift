@@ -42,4 +42,11 @@ final class ClaudeSettingsTests: XCTestCase {
     func testEnableOnInvalidJSONThrows() {
         XCTAssertThrowsError(try ClaudeSettings.enableHelper(Data("not json".utf8), helperPath: helper, ttlMs: 3000))
     }
+
+    func testIsHelperEnabled() throws {
+        let enabled = try ClaudeSettings.enableHelper(nil, helperPath: helper, ttlMs: 3000)
+        XCTAssertTrue(ClaudeSettings.isHelperEnabled(enabled, helperPath: helper))
+        let disabled = try ClaudeSettings.disableHelper(enabled)
+        XCTAssertFalse(ClaudeSettings.isHelperEnabled(disabled, helperPath: helper))
+    }
 }
