@@ -6,20 +6,20 @@ import SwitcherCore
 @MainActor
 final class SwitchController {
     private let model: AppModel
-    private let stateURL: URL
     /// Where the active-account pointer is written; the apiKeyHelper reads this same file.
     private let pointerURL: URL
-    private(set) var state: HopState
+    /// Whether Hop is currently the Claude login. Without it, sessions keep Claude Code's own login.
+    private let isLoginEnabled: () -> Bool
     var onChange: (() -> Void)?
     /// Where failures go: an alert in the app, a printed line in the CLI.
     var reportError: (Error) -> Void = { Alerts.switchFailed($0) }
 
-    init(model: AppModel, stateURL: URL = HopStateFile.url, pointerURL: URL = ActivePointerFile.url,
+    init(model: AppModel, pointerURL: URL = ActivePointerFile.url,
+         isLoginEnabled: @escaping () -> Bool = { HopLoginInstall().isEnabled() },
          reportError: ((Error) -> Void)? = nil) {
         self.model = model
-        self.stateURL = stateURL
         self.pointerURL = pointerURL
-        self.state = HopState.load(from: stateURL)
+        self.isLoginEnabled = isLoginEnabled
         if let reportError { self.reportError = reportError }
     }
 
@@ -29,11 +29,14 @@ final class SwitchController {
         return ActivePointer.parse(text)
     }
 
+    var loginEnabled: Bool { isLoginEnabled() }
+
     func menuModel(desktopRunning: Set<UUID>, hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
         MenuModel.build(accounts: model.accounts, activeAccountID: activeAccountID,
                         tokenBacked: Set(model.accounts.filter { $0.tokenAddedAt != nil }.map(\.id)),
                         desktopRunning: desktopRunning, runningSessions: RunningSessions.count(),
-                        hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions)
+                        hotkeyAction: hotkeyAction, hotkeyPositions: hotkeyPositions,
+                        loginEnabled: isLoginEnabled())
     }
 
     /// Flips the pointer file (atomically) so every running session's next stale request adopts the account.
@@ -46,8 +49,6 @@ final class SwitchController {
         }
         do {
             try AtomicFile.write(Data(ActivePointer.content(for: account.id).utf8), to: pointerURL)
-            state.activeAccountID = account.id
-            try state.save(to: stateURL)
             onChange?()
             return true
         } catch {
@@ -56,16 +57,21 @@ final class SwitchController {
         }
     }
 
-    /// Clears the active account: removes the pointer file and the recorded active id, so no session
-    /// authenticates as an account that is no longer there. Sessions have no credential until one is chosen.
+    /// Clears the active account by removing the pointer file, so no session authenticates as an account
+    /// that is no longer there. Sessions have no credential until one is chosen.
     func deactivate() {
         try? FileManager.default.removeItem(at: pointerURL)
-        state.activeAccountID = nil
-        try? state.save(to: stateURL)
         onChange?()
     }
 
+    /// Opens a terminal `claude` on `account`. Only meaningful while Hop is the Claude login: otherwise the
+    /// new session would use Claude Code's own login, not the account picked.
     func openTerminal(_ account: Account) {
+        guard isLoginEnabled() else {
+            reportError(SwitchError.store("Hop isn't your Claude login yet, so a new terminal would use your normal "
+                + "Claude Code login instead of \(account.name). Choose \u{201c}Use Hop as my Claude login\u{2026}\u{201d} first."))
+            return
+        }
         guard switchTo(account) else { return }
         if !TerminalRunner.open(.claude) { Alerts.terminalAutomationDenied() }
     }

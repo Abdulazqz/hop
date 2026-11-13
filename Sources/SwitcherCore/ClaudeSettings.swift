@@ -1,8 +1,15 @@
 import Foundation
 
-public enum ClaudeSettingsError: Error, Equatable {
+public enum ClaudeSettingsError: Error, Equatable, LocalizedError {
     /// Input was non-empty but not a JSON object: refuse rather than clobber the user's settings.
     case invalidJSON
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidJSON:
+            return "~/.claude/settings.json isn't valid JSON (a trailing comma, say), so Hop left it alone. Fix it, then try again."
+        }
+    }
 }
 
 /// Pure merge/unmerge of Hop's `apiKeyHelper` (and its TTL env entry) into Claude Code's settings JSON.
@@ -52,6 +59,6 @@ public enum ClaudeSettings {
     }
 
     static func data(from root: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .prettyPrinted])
+        try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes])
     }
 }

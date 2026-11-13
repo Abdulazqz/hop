@@ -1,7 +1,7 @@
 import AppKit
 import SwitcherCore
 
-/// `Hop status | open <n> | quit <n>` (n = 1-based menu position).
+/// `Hop status | open <n> | quit <n> | switch <n>` (n = 1-based menu position).
 @MainActor
 enum CLI {
     static let commands: Set<String> = ["status", "open", "quit", "switch"]
@@ -13,7 +13,7 @@ enum CLI {
         let launcher = Launcher(model: model) { title, info in print("error: \(title). \(info)") }
 
         if args[0] == "status" {
-            let switcher = SwitchController(model: model) { print("error: \($0.localizedDescription)") }
+            let switcher = SwitchController(model: model, reportError: { print("error: \($0.localizedDescription)") })
             let active = switcher.activeAccountID
             for (i, account) in model.accounts.enumerated() {
                 let app = model.tracker.running[account.id]
@@ -35,9 +35,10 @@ enum CLI {
             return 0
         }
         if args[0] == "switch" {
-            let switcher = SwitchController(model: model) { print("error: \($0.localizedDescription)") }
+            let switcher = SwitchController(model: model, reportError: { print("error: \($0.localizedDescription)") })
             let ok = switcher.switchTo(account)
-            print(ok ? "active: \(account.name)" : "switch failed")
+            let note = switcher.loginEnabled ? "" : " (Hop isn't your Claude login, so sessions keep their own login)"
+            print(ok ? "active: \(account.name)\(note)" : "switch failed")
             return ok ? 0 : 1
         }
         var done = false

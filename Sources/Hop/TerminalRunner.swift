@@ -1,16 +1,15 @@
 import AppKit
 
-/// Opens a new Terminal.app window running one of two fixed commands. No user input is ever interpolated.
+/// Opens a new Terminal.app window running a fixed command. No user input is ever interpolated.
 @MainActor
 enum TerminalRunner {
     static let bundleID = "com.apple.Terminal"
 
     enum Command {
-        case claude, login
+        case claude
         var script: String {
             switch self {
             case .claude: "claude"
-            case .login: "claude auth login"
             }
         }
     }

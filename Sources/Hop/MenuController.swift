@@ -18,8 +18,6 @@ final class MenuController: NSObject, NSMenuDelegate {
     private let actions: MenuActions
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
-    /// 0-based positions whose ⌃⌥N hotkey is registered; shown as hints.
-    var hotkeyPositions: Set<Int> = []
     /// Supplies the computed menu each rebuild; set by AppDelegate.
     var modelProvider: (() -> MenuModel)?
     /// Whether Hop is currently the Claude login; set by AppDelegate so the toggle item shows the right label.

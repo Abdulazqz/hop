@@ -2,13 +2,17 @@ import Foundation
 
 /// Write-to-temp-then-rename, so readers never see a half-written file.
 public enum AtomicFile {
-    public static func write(_ data: Data, to url: URL) throws {
-        let directory = url.deletingLastPathComponent()
-        let temp = directory.appendingPathComponent(".\(url.lastPathComponent).hop-\(UUID().uuidString)")
+    /// Creates the parent directory if needed, and writes through a symlink (a dotfiles-managed
+    /// settings.json, say) rather than replacing the link itself.
+    public static func write(_ data: Data, to url: URL, permissions: Int = 0o600) throws {
+        let target = url.resolvingSymlinksInPath()
+        let directory = target.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let temp = directory.appendingPathComponent(".\(target.lastPathComponent).hop-\(UUID().uuidString)")
         try data.write(to: temp, options: [])
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temp.path)
         do {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: temp, options: .usingNewMetadataOnly)
+            try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: temp.path)
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: temp, options: .usingNewMetadataOnly)
         } catch {
             try? FileManager.default.removeItem(at: temp)
             throw error

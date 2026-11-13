@@ -52,6 +52,13 @@ final class MenuModelTests: XCTestCase {
         XCTAssertEqual(build(active: nil, sessions: 3).sessionsLine, "3 terminal sessions running · they follow on their next turn")
     }
 
+    func testNoSessionsLineWhileHopIsNotTheLogin() {
+        let model = MenuModel.build(accounts: [work], activeAccountID: work.id, tokenBacked: [work.id],
+                                    desktopRunning: [], runningSessions: 2, hotkeyAction: .off, hotkeyPositions: [],
+                                    loginEnabled: false)
+        XCTAssertNil(model.sessionsLine)
+    }
+
     func testHintsFollowHotkeySetting() {
         XCTAssertEqual(build(active: nil).rows.map(\.hint), ["⌃⌥1", "⌃⌥2", "⌃⌥3"])
         XCTAssertEqual(build(active: nil, hotkeys: .off).rows.map(\.hint), [nil, nil, nil])

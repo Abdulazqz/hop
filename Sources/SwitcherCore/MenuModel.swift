@@ -25,7 +25,8 @@ public struct MenuModel: Equatable {
 
     public static func build(accounts: [Account], activeAccountID: UUID?, tokenBacked: Set<UUID>,
                              desktopRunning: Set<UUID>, runningSessions: Int,
-                             hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>) -> MenuModel {
+                             hotkeyAction: HotkeyAction, hotkeyPositions: Set<Int>,
+                             loginEnabled: Bool = true) -> MenuModel {
         let activeName = activeAccountID.flatMap { id in accounts.first { $0.id == id }?.name }
         let header = activeName.map { "Active: \($0)" } ?? "No account active"
 
@@ -44,7 +45,8 @@ public struct MenuModel: Equatable {
                 desktopLabel: running ? "Bring Claude app to front" : "Open Claude app")
         }
 
-        let sessionsLine: String? = runningSessions == 0 ? nil
+        // Sessions only follow a switch while Hop is the Claude login; otherwise they keep their own login.
+        let sessionsLine: String? = runningSessions == 0 || !loginEnabled ? nil
             : runningSessions == 1 ? "1 terminal session running · it follows on its next turn"
             : "\(runningSessions) terminal sessions running · they follow on their next turn"
 

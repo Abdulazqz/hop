@@ -11,7 +11,7 @@ enum TokenPrompt {
             + "Hop keeps it in the Keychain, never in a file."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
         field.placeholderString = "sk-ant-oat01-\u{2026}"
         alert.accessoryView = field
         alert.window.initialFirstResponder = field

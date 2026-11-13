@@ -39,17 +39,21 @@ public enum RunningSessions {
         let bytes = proc_listpids(UInt32(PROC_UID_ONLY), uid, &pids, Int32(pids.count * MemoryLayout<pid_t>.size))
         guard bytes > 0 else { return 0 }
         let found = Int(bytes) / MemoryLayout<pid_t>.size
-        var processes: [(name: String, path: String, argv: [String])] = []
         var nameBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        var argvBuffer: [UInt8] = []
+        var sessions = 0
 
         for pid in pids.prefix(found) where pid > 0 {
             let name = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count)) > 0 ? String(cString: nameBuffer) : ""
             let path = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count)) > 0 ? String(cString: pathBuffer) : ""
-            let argv = ProcessArgs.argv(pid: pid) ?? []
-            processes.append((name: name, path: path, argv: argv))
+            // Name and path settle most processes; read argv (one sysctl) only when they don't.
+            if isClaudeSession(name: name, path: path, argv: [])
+                || isClaudeSession(name: name, path: path, argv: ProcessArgs.argv(pid: pid, buffer: &argvBuffer) ?? []) {
+                sessions += 1
+            }
         }
 
-        return count(processes: processes)
+        return sessions
     }
 }

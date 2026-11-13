@@ -78,7 +78,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .openTerminal: actions = model.accounts.map { account in { [unowned self] in self.switcher.openTerminal(account) } }
         }
         hotkeys.register(actions)
-        menu.hotkeyPositions = hotkeys.registered
         menu.rebuild()
     }
 
@@ -92,12 +91,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard Alerts.confirmDisableHopLogin() else { return }
             do { try hopLogin.disable() } catch { Alerts.switchFailed(error) }
         } else {
-            let initial = model.accounts.first(where: { $0.tokenAddedAt != nil })?.id
+            // Start on the account already picked in Hop when it has a token; else the first one that does.
+            let backed = model.accounts.filter { $0.tokenAddedAt != nil }
+            let initial = backed.first(where: { $0.id == switcher.activeAccountID })?.id ?? backed.first?.id
             if let reason = HopLoginGate.blockReason(accounts: model.accounts, initialActive: initial) {
                 Alerts.hopLoginNotReady(reason)
                 return
             }
             let name = model.accounts.first(where: { $0.id == initial })?.name ?? ""
+            // The marker says a token was stored; make sure the Keychain still has it before every session relies on it.
+            if let initial, (try? KeychainTokenStore().readToken(initial)) == nil {
+                Alerts.hopLoginNotReady("The setup-token for \u{201c}\(name)\u{201d} isn't in the Keychain any more. Add it again in Edit accounts.")
+                return
+            }
             guard Alerts.confirmEnableHopLogin(startAccount: name) else { return }
             do { try hopLogin.enable(initialActive: initial) } catch { Alerts.switchFailed(error) }
         }

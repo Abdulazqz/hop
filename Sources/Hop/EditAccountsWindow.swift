@@ -129,6 +129,11 @@ private struct EditAccountsView: View {
     }
 
     private func removeToken(for account: Account) {
+        // The helper would find no token for the account every session is on, and sign them all out.
+        if account.id == switcher.activeAccountID, switcher.loginEnabled {
+            error = "\(account.name) is the active Claude login. Switch to another account first, or stop using Hop as your Claude login."
+            return
+        }
         do {
             try tokenStore.deleteToken(account.id)
             try model.setTokenState(nil, for: account.id)
@@ -167,7 +172,8 @@ private struct EditAccountsView: View {
         let safe = accountsToTrash.filter { canTrashFolder($0) }
         let kept = accountsToTrash.filter { !canTrashFolder($0) }
         // Decide token/pointer cleanup against the accounts as they are BEFORE the save.
-        let (removedTokenIDs, clearPointer) = AccountRemoval.cleanup(before: model.accounts, after: trimmed,
+        let before = model.accounts
+        let (removedTokenIDs, clearPointer) = AccountRemoval.cleanup(before: before, after: trimmed,
                                                                      active: switcher.activeAccountID)
         do {
             try model.setAccounts(trimmed)
@@ -176,8 +182,13 @@ private struct EditAccountsView: View {
             return
         }
         // Don't leave an orphaned token behind, or a pointer naming an account the user just removed.
-        for id in removedTokenIDs { try? tokenStore.deleteToken(id) }
+        let orphaned = removedTokenIDs.filter { (try? tokenStore.deleteToken($0)) == nil }
         if clearPointer { switcher.deactivate() }
+        if !orphaned.isEmpty {
+            let names = before.filter { orphaned.contains($0.id) }.map(\.name).joined(separator: ", ")
+            Alerts.show("Couldn't delete the setup-token for \(names)",
+                        "It's still in the Keychain under \u{201c}\(TokenStoreConst.service)\u{201d}. Delete it in Keychain Access.")
+        }
         for account in safe {
             let url = URL(fileURLWithPath: FolderPath.normalize(account.folder, home: NSHomeDirectory()))
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)

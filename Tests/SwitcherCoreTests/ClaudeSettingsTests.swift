@@ -43,6 +43,19 @@ final class ClaudeSettingsTests: XCTestCase {
         XCTAssertThrowsError(try ClaudeSettings.enableHelper(Data("not json".utf8), helperPath: helper, ttlMs: 3000))
     }
 
+    func testRewriteDoesNotEscapeSlashes() throws {
+        let input = Data(#"{"statusLine":{"command":"/usr/local/bin/status"}}"#.utf8)
+        let text = String(decoding: try ClaudeSettings.enableHelper(input, helperPath: helper, ttlMs: 3000), as: UTF8.self)
+        XCTAssertFalse(text.contains(#"\/"#), text)
+        XCTAssertTrue(text.contains("/usr/local/bin/status"), text)
+    }
+
+    func testInvalidJSONHasAReadableMessage() {
+        XCTAssertThrowsError(try ClaudeSettings.disableHelper(Data("{,}".utf8))) {
+            XCTAssertTrue(($0 as? LocalizedError)?.errorDescription?.contains("settings.json") == true)
+        }
+    }
+
     func testIsHelperEnabled() throws {
         let enabled = try ClaudeSettings.enableHelper(nil, helperPath: helper, ttlMs: 3000)
         XCTAssertTrue(ClaudeSettings.isHelperEnabled(enabled, helperPath: helper))

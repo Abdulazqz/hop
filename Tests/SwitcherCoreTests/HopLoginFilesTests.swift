@@ -10,6 +10,15 @@ final class HopLoginFilesTests: XCTestCase {
         XCTAssertFalse(path.contains(where: { "\t\n\"\\$`'".contains($0) }), "helper path must have no shell metachar: \(path)")
     }
 
+    func testIsShellSafe() {
+        XCTAssertTrue(HopLoginFiles.isShellSafe("/Users/me/.config/hop/hop-apikeyhelper.sh"))
+        XCTAssertTrue(HopLoginFiles.isShellSafe("/Users/j.doe-2/.config/hop/active-account"))
+        XCTAssertFalse(HopLoginFiles.isShellSafe("/Volumes/Data HD/Users/me/.config/hop/hop-apikeyhelper.sh"))
+        XCTAssertFalse(HopLoginFiles.isShellSafe("/Users/$me/.config/hop/x.sh"))
+        XCTAssertFalse(HopLoginFiles.isShellSafe("/Users/o'brien/.config/hop/x.sh"))
+        XCTAssertFalse(HopLoginFiles.isShellSafe(""))
+    }
+
     func testPointerSharesTheShellSafeDirectory() {
         XCTAssertFalse(HopLoginFiles.pointer(home: "/Users/me").contains(" "))
     }

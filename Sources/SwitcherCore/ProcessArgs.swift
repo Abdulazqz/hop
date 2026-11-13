@@ -42,13 +42,22 @@ public enum ProcessArgs {
 
     /// argv of a running process owned by this user, or nil if it can't be read.
     public static func argv(pid: pid_t) -> [String]? {
-        var mib: [Int32] = [CTL_KERN, KERN_ARGMAX]
-        var argmax: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        guard sysctl(&mib, 2, &argmax, &size, nil, 0) == 0, argmax > 0 else { return nil }
-        var buffer = [UInt8](repeating: 0, count: Int(argmax))
-        size = buffer.count
-        mib = [CTL_KERN, KERN_PROCARGS2, pid]
+        var buffer: [UInt8] = []
+        return argv(pid: pid, buffer: &buffer)
+    }
+
+    /// Same, reusing `buffer` (grown to kern.argmax, about 1 MiB, on first use) so a scan over every
+    /// process allocates it once instead of once per pid.
+    public static func argv(pid: pid_t, buffer: inout [UInt8]) -> [String]? {
+        if buffer.isEmpty {
+            var mib: [Int32] = [CTL_KERN, KERN_ARGMAX]
+            var argmax: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            guard sysctl(&mib, 2, &argmax, &size, nil, 0) == 0, argmax > 0 else { return nil }
+            buffer = [UInt8](repeating: 0, count: Int(argmax))
+        }
+        var size = buffer.count
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
         return parseProcArgs2(Array(buffer[..<size]))
     }

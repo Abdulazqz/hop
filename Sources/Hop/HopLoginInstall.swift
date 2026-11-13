@@ -4,9 +4,13 @@ import SwitcherCore
 enum HopLoginInstallError: Error, LocalizedError {
     case noInitialActive
     case foreignHelper(String)
+    case unsafePath(String)
     var errorDescription: String? {
         switch self {
         case .noInitialActive: return "Choose which token-backed account to start active before enabling."
+        case .unsafePath(let path):
+            return "Hop can't be your Claude login from this home folder: Claude Code runs \(path) through the shell, "
+                + "and the path has a space or shell character in it."
         case .foreignHelper(let path):
             return "Your ~/.claude/settings.json already sets apiKeyHelper to \(path). Remove it first if you want Hop to manage the login."
         }
@@ -52,10 +56,14 @@ struct HopLoginInstall {
         if let foreign = ClaudeSettings.foreignHelper(existing, hopPath: paths.helperScript.path) {
             throw HopLoginInstallError.foreignHelper(foreign)
         }
+        // Claude Code runs the helper via `/bin/sh -c`; a home folder with a space would break every session.
+        for path in [paths.helperScript.path, paths.pointer.path] where !HopLoginFiles.isShellSafe(path) {
+            throw HopLoginInstallError.unsafePath(path)
+        }
+        // Validate the settings before touching anything, so a failed enable leaves no side effects.
+        let merged = try ClaudeSettings.enableHelper(existing, helperPath: paths.helperScript.path, ttlMs: ttlMs)
         try writeHelperScript()
         try AtomicFile.write(Data(ActivePointer.content(for: initialActive).utf8), to: paths.pointer)
-        let merged = try ClaudeSettings.enableHelper(existing, helperPath: paths.helperScript.path, ttlMs: ttlMs)
-        try createParent(of: paths.settings)
         try AtomicFile.write(merged, to: paths.settings)
     }
 
@@ -67,14 +75,9 @@ struct HopLoginInstall {
         // so Claude Code falls straight back to its normal login and re-enabling is instant.
     }
 
+    /// Written atomically, so a session that runs the helper mid-write never execs a half-written script.
     private func writeHelperScript() throws {
-        try createParent(of: paths.helperScript)
         let text = HelperScript.contents(pointerPath: paths.pointer.path, tokenService: TokenStoreConst.service)
-        try Data(text.utf8).write(to: paths.helperScript, options: [])
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: paths.helperScript.path)
-    }
-
-    private func createParent(of url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try AtomicFile.write(Data(text.utf8), to: paths.helperScript, permissions: 0o700)
     }
 }
