@@ -5,9 +5,15 @@ import SwitcherCore
 @MainActor
 final class EditAccountsWindow {
     private let model: AppModel
+    private let switcher: SwitchController
+    private let tokenStore: TokenStore
     private var window: NSWindow?
 
-    init(model: AppModel) { self.model = model }
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore = KeychainTokenStore()) {
+        self.model = model
+        self.switcher = switcher
+        self.tokenStore = tokenStore
+    }
 
     /// Opens a fresh editor (so it always starts from the saved accounts), or fronts the open one.
     func show() {
@@ -16,7 +22,7 @@ final class EditAccountsWindow {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let view = EditAccountsView(model: model) { [weak self] in self?.close() }
+        let view = EditAccountsView(model: model, switcher: switcher, tokenStore: tokenStore) { [weak self] in self?.close() }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "Edit accounts"
         window.styleMask = [.titled, .closable]
@@ -37,14 +43,18 @@ final class EditAccountsWindow {
 
 private struct EditAccountsView: View {
     let model: AppModel
+    let switcher: SwitchController
+    let tokenStore: TokenStore
     let close: () -> Void
     @State private var accounts: [Account]
     @State private var accountsToTrash: [Account] = []
     @State private var pendingRemoval: Account?
     @State private var error: String?
 
-    init(model: AppModel, close: @escaping () -> Void) {
+    init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore, close: @escaping () -> Void) {
         self.model = model
+        self.switcher = switcher
+        self.tokenStore = tokenStore
         self.close = close
         _accounts = State(initialValue: model.accounts)
     }
@@ -64,6 +74,13 @@ private struct EditAccountsView: View {
                         Text(folderLabel(account))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if account.tokenAddedAt != nil {
+                            Image(systemName: "key.fill").foregroundStyle(.secondary).help("Has a setup-token")
+                            Button("Replace") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                            Button("Remove") { removeToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                        } else {
+                            Button("Add token") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                        }
                         Button { pendingRemoval = account } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                             .help("Remove account")
@@ -97,6 +114,45 @@ private struct EditAccountsView: View {
         }
     }
 
+    private func setToken(for account: Account) {
+        guard let raw = TokenPrompt.paste(accountName: account.name) else { return }
+        do {
+            let token = try SetupToken.normalize(raw)
+            try tokenStore.writeToken(token, for: account.id)
+            let now = Date()
+            try model.setTokenState(now, for: account.id)
+            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = now }
+            error = nil
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    private func removeToken(for account: Account) {
+        // The helper would find no token for the account every session is on, and sign them all out.
+        if account.id == switcher.activeAccountID, switcher.loginEnabled {
+            error = "\(account.name) is the active Claude login. Switch to another account first, or stop using Hop as your Claude login."
+            return
+        }
+        do {
+            try tokenStore.deleteToken(account.id)
+            try model.setTokenState(nil, for: account.id)
+            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = nil }
+            error = nil
+        } catch {
+            self.error = message(for: error)
+        }
+    }
+
+    private func message(for error: Error) -> String {
+        switch error {
+        case SetupTokenError.empty: return "Paste the setup-token."
+        case SetupTokenError.wrongPrefix: return "That should start with sk-ant-oat01-."
+        case SetupTokenError.tooShort: return "That setup-token looks too short."
+        default: return error.localizedDescription
+        }
+    }
+
     private func folderLabel(_ account: Account) -> String {
         account.folder.map { ($0 as NSString).lastPathComponent } ?? "Claude (default)"
     }
@@ -115,11 +171,23 @@ private struct EditAccountsView: View {
         model.tracker.refresh()
         let safe = accountsToTrash.filter { canTrashFolder($0) }
         let kept = accountsToTrash.filter { !canTrashFolder($0) }
+        // Decide token/pointer cleanup against the accounts as they are BEFORE the save.
+        let before = model.accounts
+        let (removedTokenIDs, clearPointer) = AccountRemoval.cleanup(before: before, after: trimmed,
+                                                                     active: switcher.activeAccountID)
         do {
             try model.setAccounts(trimmed)
         } catch {
             self.error = error.localizedDescription
             return
+        }
+        // Don't leave an orphaned token behind, or a pointer naming an account the user just removed.
+        let orphaned = removedTokenIDs.filter { (try? tokenStore.deleteToken($0)) == nil }
+        if clearPointer { switcher.deactivate() }
+        if !orphaned.isEmpty {
+            let names = before.filter { orphaned.contains($0.id) }.map(\.name).joined(separator: ", ")
+            Alerts.show("Couldn't delete the setup-token for \(names)",
+                        "It's still in the Keychain under \u{201c}\(TokenStoreConst.service)\u{201d}. Delete it in Keychain Access.")
         }
         for account in safe {
             let url = URL(fileURLWithPath: FolderPath.normalize(account.folder, home: NSHomeDirectory()))
@@ -144,7 +212,7 @@ private struct RemoveAccountSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Remove “\(account.name)”?").font(.headline)
-            Text("It leaves Hop. Its sign-in stays in its folder unless you move the folder to the Trash.")
+            Text("It leaves Hop. Its desktop sign-in stays in its folder unless you move the folder to the Trash; its saved terminal login is deleted.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Toggle("Also move its data folder to the Trash", isOn: $trashFolder)

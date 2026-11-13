@@ -77,4 +77,46 @@ final class AccountValidationTests: XCTestCase {
         XCTAssertEqual(AccountValidationError.duplicateName("Work").errorDescription,
                        "Another account is already called \u{201c}Work\u{201d}.")
     }
+
+    func testDuplicateEmailIsCaseInsensitiveAndTrimmed() {
+        var a = acct("A", nil); a.email = "Me@Example.com"
+        var b = acct("B", "~/x"); b.email = " me@example.com "
+        XCTAssertThrowsError(try AccountValidation.validate([a, b], home: home)) {
+            XCTAssertEqual($0 as? AccountValidationError, .duplicateEmail("me@example.com"))
+        }
+    }
+
+    func testAccountsWithoutEmailNeverCollide() throws {
+        try AccountValidation.validate([acct("A", nil), acct("B", "~/x"), acct("C", "~/y")], home: home)
+    }
+
+    func testSameEmailInTwoOrganizationsIsAllowed() throws {
+        var a = acct("A", nil); a.email = "me@example.com"; a.organizationUuid = "org-p"
+        var b = acct("B", "~/x"); b.email = "me@example.com"; b.organizationUuid = "org-t"
+        try AccountValidation.validate([a, b], home: home)
+    }
+
+    func testSameEmailAndOrganizationIsRejected() {
+        var a = acct("A", nil); a.email = "me@example.com"; a.organizationUuid = "org-p"
+        var b = acct("B", "~/x"); b.email = "Me@Example.com"; b.organizationUuid = " org-p "
+        XCTAssertThrowsError(try AccountValidation.validate([a, b], home: home)) {
+            XCTAssertEqual($0 as? AccountValidationError, .duplicateEmail("me@example.com"))
+        }
+    }
+
+    func testSameEmailWithAndWithoutARecordedOrganizationIsAllowed() throws {
+        // An account saved before Hop recorded organizations sits next to one that has: the upgrade state.
+        var a = acct("A", nil); a.email = "me@example.com"
+        var b = acct("B", "~/x"); b.email = "me@example.com"; b.organizationUuid = "org-t"
+        try AccountValidation.validate([a, b], home: home)
+    }
+
+    func testLoginLabelShowsTheOrganization() {
+        var a = acct("A", nil)
+        XCTAssertNil(a.loginLabel)
+        a.email = "me@example.com"
+        XCTAssertEqual(a.loginLabel, "me@example.com")
+        a.organizationName = "Team"
+        XCTAssertEqual(a.loginLabel, "me@example.com · Team")
+    }
 }

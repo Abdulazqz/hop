@@ -20,9 +20,9 @@ extension AccountColor {
 }
 
 enum Dot {
-    /// 10pt color dot: filled when running, ring when closed.
-    static func image(color: NSColor, filled: Bool) -> NSImage {
-        NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+    /// Color dot: filled when running, ring when closed. 10pt by default.
+    static func image(color: NSColor, filled: Bool, size: CGFloat = 10) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             let path = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
             if filled {
                 color.setFill()

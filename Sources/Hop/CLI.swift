@@ -1,10 +1,10 @@
 import AppKit
 import SwitcherCore
 
-/// `Hop status | open <n> | quit <n>` (n = 1-based menu position).
+/// `Hop status | open <n> | quit <n> | switch <n>` (n = 1-based menu position).
 @MainActor
 enum CLI {
-    static let commands: Set<String> = ["status", "open", "quit"]
+    static let commands: Set<String> = ["status", "open", "quit", "switch"]
 
     static func run(_ args: [String]) -> Int32 {
         _ = NSApplication.shared   // Focuser uses NSApp
@@ -13,10 +13,13 @@ enum CLI {
         let launcher = Launcher(model: model) { title, info in print("error: \(title). \(info)") }
 
         if args[0] == "status" {
+            let switcher = SwitchController(model: model, reportError: { print("error: \($0.localizedDescription)") })
+            let active = switcher.activeAccountID
             for (i, account) in model.accounts.enumerated() {
                 let app = model.tracker.running[account.id]
-                let state = app.map { "running\tpid \($0.processIdentifier)" } ?? "closed\t-"
-                print("\(i + 1)\t\(account.name)\t\(state)\t\(account.folder ?? FolderPath.defaultProfile)")
+                let desktop = app.map { "running\tpid \($0.processIdentifier)" } ?? "closed\t-"
+                let mark = account.id == active ? "*" : " "
+                print("\(i + 1)\t\(mark)\t\(account.name)\t\(account.loginLabel ?? "-")\t\(desktop)\t\(account.folder ?? FolderPath.defaultProfile)")
             }
             return 0
         }
@@ -30,6 +33,13 @@ enum CLI {
             let sent = model.tracker.running[account.id]?.terminate() ?? false
             print(sent ? "quit sent to \(account.name)" : "\(account.name) isn't running")
             return 0
+        }
+        if args[0] == "switch" {
+            let switcher = SwitchController(model: model, reportError: { print("error: \($0.localizedDescription)") })
+            let ok = switcher.switchTo(account)
+            let note = switcher.loginEnabled ? "" : " (Hop isn't your Claude login, so sessions keep their own login)"
+            print(ok ? "active: \(account.name)\(note)" : "switch failed")
+            return ok ? 0 : 1
         }
         var done = false
         launcher.open(account) { done = true }

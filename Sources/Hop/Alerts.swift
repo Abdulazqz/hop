@@ -10,8 +10,66 @@ enum Alerts {
         alert.runModal()
     }
 
+    static func claudeMissing() {
+        show("Claude app not found",
+             "Hop opens the Claude desktop app, which isn't installed on this Mac. "
+             + "Install it from claude.ai/download, then open Hop again.")
+    }
+
+    static func terminalAutomationDenied() {
+        show("Hop can't open Terminal",
+             "Allow Hop to control Terminal in System Settings › Privacy & Security › Automation, then try again.")
+    }
+
+    static func switchFailed(_ error: Error) {
+        show("Couldn't switch", error.localizedDescription)
+    }
+
+    /// Explains that the menu bar is full. Returns `true` if the user asked not to be told again.
+    static func hiddenByNotch() -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Hop is running, but its menu bar icon is hidden"
+        alert.informativeText = "This Mac's menu bar is full, so macOS put Hop's icon behind the notch, where nothing is drawn. "
+            + "Free some space in System Settings (Menu Bar, or Control Center on older macOS) by setting items you don't need "
+            + "to \u{201c}Don't Show in Menu Bar\u{201d}. Until then, \u{2303}\u{2325}1 \u{2026} \u{2303}\u{2325}9 still open your accounts by position."
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don't tell me again"
+        alert.runModal()
+        return alert.suppressionButton?.state == .on
+    }
+
     static func recovered() {
         show("Your accounts file couldn't be read",
              "It was saved as accounts.json.bad and replaced with the default three accounts.")
+    }
+
+    /// A two-button confirm; true when the user picks the primary (first) button.
+    static func confirm(_ message: String, _ info: String, confirmTitle: String, cancelTitle: String = "Cancel") -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: cancelTitle)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    static func confirmEnableHopLogin(startAccount: String) -> Bool {
+        confirm("Make Hop your Claude login?",
+                "Every claude session on this Mac \u{2014} this app, your terminal sessions, anything using claude \u{2014} will "
+                + "authenticate through Hop and start as \u{201c}\(startAccount)\u{201d}. Switching in Hop then moves them all live. "
+                + "Your Keychain login is left untouched; turn this off any time to go back to it.",
+                confirmTitle: "Enable")
+    }
+
+    static func confirmDisableHopLogin() -> Bool {
+        confirm("Stop using Hop as your Claude login?",
+                "Claude Code goes back to its normal Keychain login right away. Your stored tokens stay in the Keychain, so you can re-enable any time.",
+                confirmTitle: "Turn Off")
+    }
+
+    static func hopLoginNotReady(_ reason: String) {
+        show("Not ready to enable Hop login", reason)
     }
 }

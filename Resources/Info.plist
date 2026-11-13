@@ -21,6 +21,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Hop uses this to bring the right Claude window to the front.</string>
+    <string>Hop uses this to bring the right Claude window to the front and to open Terminal on the account you pick.</string>
 </dict>
 </plist>
