@@ -27,10 +27,10 @@ Turn on **Launch at login** from its menu.
 
 - The line at the top of the menu shows the active account, and below it how many terminal sessions are running.
 - The menu-bar icon is a filled circle in the active account's color, and a plain gray icon when no account is active.
-- Each account row opens a submenu:
-  - **Switch to this account** makes it the active account for every `claude` session. The item reads **Active** when it already is, and **Add a setup-token…** (which opens Edit accounts) when Hop holds no token for it yet.
-  - **Open Terminal** switches to the account and opens a Terminal window running `claude`.
-  - **Open Claude app** starts the desktop app for that account, or **Bring Claude app to front** when it's already running. Hold ⌥ to turn it into **Quit Claude app**.
+- Each account is one row, with no submenu. Its dot is filled while its Claude app is running, a checkmark marks the active account, and its ⌃⌥ hotkey sits at the right.
+  - **Click the row** to make it the active account for every `claude` session. For an account with no setup-token yet, the click starts **Get token** instead.
+  - **The Terminal icon** switches to the account and opens a Terminal window running `claude` (dimmed until the account has a setup-token).
+  - **The Claude app icon** starts the desktop app for that account, or brings it to the front when it's already running. ⌥-click it to quit that account's Claude app.
 - **Use Hop as my Claude login…** turns Hop into the login source for every `claude` session on this Mac (see below). Once on, the item reads **Stop using Hop as my Claude login** and reverts cleanly.
 - **Hotkeys** chooses what ⌃⌥1 … ⌃⌥9 do for the accounts by position: Off, Switch login, Open Claude app (the default), or Open Terminal.
 - **Add account…** makes a new profile folder and opens Claude in it so you can sign in.
@@ -53,8 +53,7 @@ the way `/login` does — but across all sessions at once and without ever
 writing a token to disk.
 
 **One-time setup.** Give each account a **setup-token**: in **Edit accounts**,
-click **Get token…** on the account (or pick **Add a setup-token…** on it in the
-menu). Hop runs `claude setup-token` for you and opens the sign-in page in a
+click **Get token…** on the account (or click the account's row in the menu). Hop runs `claude setup-token` for you and opens the sign-in page in a
 browser window just for that account (Chrome, Brave, Edge, Chromium, or Vivaldi,
 on its own profile), so no other account is signed in there. Sign in as that
 account and click **Authorize**; Hop catches the token, closes the window, and
@@ -69,7 +68,7 @@ writes an `apiKeyHelper` line into your existing `~/.claude/settings.json` and
 picks a token-backed account to start active. (Hop refuses to enable until at
 least one account has a token.)
 
-**Switching.** Click an account and choose **Switch to this account**. Hop flips
+**Switching.** Click an account's row in the menu. Hop flips
 a one-line pointer file naming the active account; every running `claude`
 session — this app's, your terminal sessions, anything using `claude` — picks it
 up on its next turn (within a few seconds), with nothing to restart.
