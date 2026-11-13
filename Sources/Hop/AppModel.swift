@@ -24,6 +24,13 @@ final class AppModel {
         onAccountsChanged?()
     }
 
+    /// Validates a setup-token, keeps it in `tokenStore` (the Keychain), and marks the account as having one.
+    func storeToken(_ raw: String, for id: UUID, in tokenStore: TokenStore) throws {
+        let token = try SetupToken.normalize(raw)
+        try tokenStore.writeToken(token, for: id)
+        try setTokenState(Date(), for: id)
+    }
+
     /// Commits only the token marker for one account, independent of any editor's unsaved edits.
     func setTokenState(_ date: Date?, for id: UUID) throws {
         try setAccounts(AccountTokens.apply(accounts, tokenAddedAt: date, for: id))

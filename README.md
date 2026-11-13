@@ -34,7 +34,7 @@ Turn on **Launch at login** from its menu.
 - **Use Hop as my Claude login…** turns Hop into the login source for every `claude` session on this Mac (see below). Once on, the item reads **Stop using Hop as my Claude login** and reverts cleanly.
 - **Hotkeys** chooses what ⌃⌥1 … ⌃⌥9 do for the accounts by position: Off, Switch login, Open Claude app (the default), or Open Terminal.
 - **Add account…** makes a new profile folder and opens Claude in it so you can sign in.
-- **Edit accounts…** renames, recolors, reorders, and removes accounts, and adds, replaces, or removes each account's setup-token.
+- **Edit accounts…** renames, recolors, reorders, and removes accounts, and gets, renews, or removes each account's setup-token.
 - Quitting Hop leaves your Claude windows open — and leaves terminal switching working, since the login is served by a small script, not the app.
 - The first time it brings a window forward, macOS may ask to let Hop control System Events. Allow it.
 - macOS remembers the permissions it asks for as long as Hop keeps the same signing identity. `build.sh` uses your Apple Development identity when Xcode has one; if it has to sign ad hoc it says so, and macOS will ask again after each rebuild.
@@ -52,10 +52,19 @@ Hop switches which account every `claude` session uses by owning the login,
 the way `/login` does — but across all sessions at once and without ever
 writing a token to disk.
 
-**One-time setup.** Give each account a **setup-token**: run `claude setup-token`
-signed in as that account (it opens your browser), copy the `sk-ant-oat01…`
-token, and paste it into the account in **Edit accounts**. Hop validates it and
-stores it in the Keychain. Then choose **Use Hop as my Claude login…**. Hop
+**One-time setup.** Give each account a **setup-token**: in **Edit accounts**,
+click **Get token…** on the account (or pick **Add a setup-token…** on it in the
+menu). Hop runs `claude setup-token` for you and opens the sign-in page in a
+browser window just for that account (Chrome, Brave, Edge, Chromium, or Vivaldi,
+on its own profile), so no other account is signed in there. Sign in as that
+account and click **Authorize**; Hop catches the token, closes the window, and
+stores the token in the Keychain. It's never shown on screen or written to a
+file. The window remembers that account's claude.ai sign-in (in
+`~/Library/Application Support/Hop/Browser/`, removed with the account), so
+renewing later is just **Authorize**. (Without a supported browser, the page
+opens in your default browser instead, so check which account is signed in
+there. **Paste a token instead…** still takes a token from `claude setup-token`
+run by hand.) Then choose **Use Hop as my Claude login…**. Hop
 writes an `apiKeyHelper` line into your existing `~/.claude/settings.json` and
 picks a token-backed account to start active. (Hop refuses to enable until at
 least one account has a token.)
@@ -81,10 +90,10 @@ line; Claude Code goes straight back to its normal Keychain login. Your stored
 tokens stay in the Keychain, so you can re-enable any time. Hop never deletes or
 overwrites Claude Code's own login item.
 
-**Renewing.** Setup-tokens expire after a few weeks. When the active account's
-token dies its sessions start reporting "apiKeyHelper is failing" — Claude Code
-does **not** fall back to your Keychain login while `apiKeyHelper` is set. Mint a
-fresh token with `claude setup-token` and paste it in with **Replace**, or switch
+**Renewing.** `claude setup-token` makes tokens that last a year. When the active
+account's token expires or is revoked, its sessions start reporting "apiKeyHelper
+is failing" — Claude Code does **not** fall back to your Keychain login while
+`apiKeyHelper` is set. Click **Renew…** on the account in Edit accounts, or switch
 to another token-backed account.
 
 Hop reads its Keychain tokens through Apple's `security` tool, the same way
@@ -97,7 +106,13 @@ macOS asks again after each rebuild.
 
 Hop can still record an account's email and organization for display (one
 claude.ai account can belong to several organizations, each its own login), but
-it no longer needs them to switch — the setup-token identifies the account.
+it doesn't need them to switch — the setup-token identifies the account.
+
+**Billing.** Claude Code's banner says "API Usage Billing" and `claude auth
+status` says `api_key_helper` whenever the credential comes from a helper
+script. That names how the credential arrives, not what it bills: a setup-token
+(`sk-ant-oat01-…`) is a subscription token, which Anthropic refuses as an API
+key, so usage counts against that account's Claude plan.
 
 ## Troubleshooting
 
@@ -109,8 +124,12 @@ you don't need to "Don't Show in Menu Bar", then open Hop again. The ⌃⌥ hotk
 and the command line keep working while the icon is hidden.
 
 **"Your apiKeyHelper script is failing."** The active account's setup-token has
-expired or was removed. Mint a fresh one with `claude setup-token` and paste it
-in with **Replace** in Edit accounts, or switch to another token-backed account.
+expired or was removed. Click **Renew…** on it in Edit accounts, or switch to
+another token-backed account.
+
+**Get token… can't find `claude`.** Hop looks in `~/.local/bin`, `~/.claude/local`,
+`/opt/homebrew/bin`, `/usr/local/bin`, and then your login shell's `PATH`. Install
+Claude Code, or use **Paste a token instead…**.
 
 **"Claude app not found".** Hop launches the Claude desktop app and looks it up
 by bundle identifier, so it can live anywhere macOS knows about. If it isn't

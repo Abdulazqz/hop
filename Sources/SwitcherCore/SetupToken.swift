@@ -1,9 +1,17 @@
 import Foundation
 
-public enum SetupTokenError: Error, Equatable {
+public enum SetupTokenError: Error, Equatable, LocalizedError {
     case empty
     case wrongPrefix
     case tooShort
+
+    public var errorDescription: String? {
+        switch self {
+        case .empty: return "Paste the setup-token."
+        case .wrongPrefix: return "That should start with sk-ant-oat01-."
+        case .tooShort: return "That setup-token looks too short."
+        }
+    }
 }
 
 /// Validates and normalizes a `claude setup-token` the user pasted into Hop.

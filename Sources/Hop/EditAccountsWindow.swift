@@ -49,6 +49,7 @@ private struct EditAccountsView: View {
     @State private var accounts: [Account]
     @State private var accountsToTrash: [Account] = []
     @State private var pendingRemoval: Account?
+    @State private var fetch: TokenFetchModel?
     @State private var error: String?
 
     init(model: AppModel, switcher: SwitchController, tokenStore: TokenStore, close: @escaping () -> Void) {
@@ -75,11 +76,12 @@ private struct EditAccountsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if account.tokenAddedAt != nil {
-                            Image(systemName: "key.fill").foregroundStyle(.secondary).help("Has a setup-token")
-                            Button("Replace") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                            Image(systemName: "key.fill").foregroundStyle(.secondary)
+                                .help("Has a setup-token" + (account.loginLabel.map { " for \($0)" } ?? ""))
+                            Button("Renew\u{2026}") { getToken(for: account) }.buttonStyle(.borderless).font(.caption)
                             Button("Remove") { removeToken(for: account) }.buttonStyle(.borderless).font(.caption)
                         } else {
-                            Button("Add token") { setToken(for: account) }.buttonStyle(.borderless).font(.caption)
+                            Button("Get token\u{2026}") { getToken(for: account) }.buttonStyle(.borderless).font(.caption)
                         }
                         Button { pendingRemoval = account } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
@@ -112,20 +114,46 @@ private struct EditAccountsView: View {
                 pendingRemoval = nil
             }
         }
+        .sheet(item: $fetch) { fetch in
+            TokenFetchSheet(fetch: fetch) { token in
+                storeToken(token, for: fetch.account)
+            } pasteInstead: {
+                self.fetch = nil
+                // After the sheet has gone, so the paste dialog isn't stacked on it.
+                DispatchQueue.main.async { setToken(for: fetch.account) }
+            } dismiss: {
+                self.fetch = nil
+            }
+        }
     }
 
+    /// Runs `claude setup-token` in a fresh browser window and saves the token it prints.
+    private func getToken(for account: Account) {
+        error = nil
+        fetch = TokenFetchModel(account: account)
+    }
+
+    /// The manual path: paste a token from `claude setup-token` run by hand.
     private func setToken(for account: Account) {
         guard let raw = TokenPrompt.paste(accountName: account.name) else { return }
+        storeToken(raw, for: account)
+    }
+
+    private func storeToken(_ raw: String, for account: Account) {
         do {
-            let token = try SetupToken.normalize(raw)
-            try tokenStore.writeToken(token, for: account.id)
-            let now = Date()
-            try model.setTokenState(now, for: account.id)
-            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = now }
+            try model.storeToken(raw, for: account.id, in: tokenStore)
+            syncTokenFields(account.id)
             error = nil
         } catch {
-            self.error = message(for: error)
+            self.error = error.localizedDescription
         }
+    }
+
+    /// Copies the saved token marker into the editor's row, so Save keeps it.
+    private func syncTokenFields(_ id: UUID) {
+        guard let saved = model.accounts.first(where: { $0.id == id }),
+              let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[i].tokenAddedAt = saved.tokenAddedAt
     }
 
     private func removeToken(for account: Account) {
@@ -137,19 +165,10 @@ private struct EditAccountsView: View {
         do {
             try tokenStore.deleteToken(account.id)
             try model.setTokenState(nil, for: account.id)
-            if let i = accounts.firstIndex(where: { $0.id == account.id }) { accounts[i].tokenAddedAt = nil }
+            syncTokenFields(account.id)
             error = nil
         } catch {
-            self.error = message(for: error)
-        }
-    }
-
-    private func message(for error: Error) -> String {
-        switch error {
-        case SetupTokenError.empty: return "Paste the setup-token."
-        case SetupTokenError.wrongPrefix: return "That should start with sk-ant-oat01-."
-        case SetupTokenError.tooShort: return "That setup-token looks too short."
-        default: return error.localizedDescription
+            self.error = error.localizedDescription
         }
     }
 
@@ -184,6 +203,10 @@ private struct EditAccountsView: View {
         // Don't leave an orphaned token behind, or a pointer naming an account the user just removed.
         let orphaned = removedTokenIDs.filter { (try? tokenStore.deleteToken($0)) == nil }
         if clearPointer { switcher.deactivate() }
+        // A removed account's browser profile holds its claude.ai sign-in: it goes with the account.
+        for id in AccountRemoval.removedIDs(before: before, after: trimmed) {
+            try? FileManager.default.removeItem(at: BrowserProfileFile.url(for: id))
+        }
         if !orphaned.isEmpty {
             let names = before.filter { orphaned.contains($0.id) }.map(\.name).joined(separator: ", ")
             Alerts.show("Couldn't delete the setup-token for \(names)",
