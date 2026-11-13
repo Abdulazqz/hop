@@ -12,6 +12,16 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN_DIR/Hop" "$APP/Contents/MacOS/Hop"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# App icon: every size macOS asks for, made from the one 1024px source.
+mkdir -p "$APP/Contents/Resources"
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" Resources/AppIcon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$((size * 2))" "$((size * 2))" Resources/AppIcon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
 # Sign with a stable identity so macOS remembers "Always Allow" for Keychain access across rebuilds.
 # Override with HOP_SIGN_IDENTITY (a name or SHA-1 from `security find-identity -v -p codesigning`); "-" forces ad hoc.
 IDENTITY="${HOP_SIGN_IDENTITY:-}"
