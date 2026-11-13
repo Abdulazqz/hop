@@ -95,48 +95,47 @@ final class MenuController: NSObject, NSMenuDelegate {
         menu.addItem(ClosureMenuItem(title: "Quit Hop", keyEquivalent: "q") { NSApp.terminate(nil) })
     }
 
-    /// One account row: color dot, checkmark when active, and a submenu with the three actions.
+    /// One account row with no submenu: clicking it switches to the account (or gets its setup-token when it has
+    /// none), and its icons open Terminal on it or its Claude app. Return on the highlighted row does the same
+    /// as a click.
     private func accountItem(_ account: Account, row: MenuRow) -> NSMenuItem {
-        let dot = Dot.image(color: account.color.nsColor, filled: row.desktopRunning)
-        dot.accessibilityDescription = row.desktopRunning ? "Running" : "Closed"
-        let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
-        item.attributedTitle = Self.title(row.title, hint: row.hint)
-        item.image = dot
-        item.state = row.isActive ? .on : .off
-        item.toolTip = row.isActive ? "Active terminal login" : nil
-
-        let sub = NSMenu()
-        sub.autoenablesItems = false
+        let primary: () -> Void
+        let help: String
         switch row.switchLabel {
         case .active:
-            let active = NSMenuItem(title: "Active", action: nil, keyEquivalent: "")
-            active.isEnabled = false
-            active.state = .on
-            sub.addItem(active)
+            primary = {}
+            help = "\(account.name) is the active Claude login"
         case .switchLogin:
-            sub.addItem(ClosureMenuItem(title: "Switch to this account") { [weak self] in self?.actions.switchLogin(account) })
+            primary = { [weak self] in self?.actions.switchLogin(account) }
+            help = "Switch every claude session to \(account.name)"
         case .needsToken:
-            let needs = ClosureMenuItem(title: "Add a setup-token…") { [weak self] in
+            primary = { [weak self] in
                 if let getToken = self?.actions.getToken { getToken(account) } else { self?.actions.editAccounts?() }
             }
-            needs.isEnabled = actions.getToken != nil || actions.editAccounts != nil
-            sub.addItem(needs)
+            help = "Add a setup-token for \(account.name)"
         }
-        if row.terminalLabel == .openTerminal {
-            sub.addItem(ClosureMenuItem(title: "Open Terminal") { [weak self] in self?.actions.openTerminal(account) })
+        let appIcon = ClaudeApp.url.map { url -> NSImage in
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 16, height: 16)
+            return icon
         }
-        sub.addItem(.separator())
-        if ClaudeApp.url != nil {
-            let open = ClosureMenuItem(title: row.desktopLabel) { [weak self] in self?.actions.open(account) }
-            open.keyEquivalentModifierMask = []
-            sub.addItem(open)
-            let quit = ClosureMenuItem(title: "Quit Claude app") { [weak self] in self?.actions.quit(account) }
-            quit.isAlternate = true
-            quit.keyEquivalentModifierMask = .option
-            quit.isEnabled = row.desktopRunning
-            sub.addItem(quit)
+        let view = AccountRowView(AccountRowView.Content(
+            name: row.title,
+            color: account.color.nsColor,
+            desktopRunning: row.desktopRunning,
+            isActive: row.isActive,
+            hint: row.hint,
+            help: help,
+            terminalHelp: row.terminalLabel == .openTerminal ? "Open Terminal on \(account.name)" : nil,
+            appIcon: appIcon,
+            appHelp: row.desktopLabel + (row.desktopRunning ? " (\u{2325}-click to quit it)" : "")))
+        view.onRow = primary
+        view.onTerminal = { [weak self] in self?.actions.openTerminal(account) }
+        view.onApp = { [weak self] quit in
+            if quit { if row.desktopRunning { self?.actions.quit(account) } } else { self?.actions.open(account) }
         }
-        item.submenu = sub
+        let item = ClosureMenuItem(title: row.title, handler: primary)
+        item.view = view
         return item
     }
 
@@ -164,18 +163,5 @@ final class MenuController: NSObject, NSMenuDelegate {
             statusItem.button?.image = Self.symbolIcon
             statusItem.button?.toolTip = "Hop"
         }
-    }
-
-    private static func title(_ name: String, hint: String?) -> NSAttributedString {
-        let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: 200)]
-        let font = NSFont.menuFont(ofSize: 0)
-        let title = NSMutableAttributedString(string: name, attributes: [.font: font, .paragraphStyle: style])
-        if let hint {
-            title.append(NSAttributedString(string: "\t" + hint, attributes: [
-                .font: font, .paragraphStyle: style, .foregroundColor: NSColor.secondaryLabelColor,
-            ]))
-        }
-        return title
     }
 }
