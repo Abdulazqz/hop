@@ -9,6 +9,8 @@ struct MenuActions {
     var setHotkeyAction: (HotkeyAction) -> Void
     var addAccount: (() -> Void)? = nil
     var editAccounts: (() -> Void)? = nil
+    /// Starts Get token for one account right away.
+    var getToken: ((Account) -> Void)? = nil
     var toggleHopLogin: (() -> Void)? = nil
 }
 
@@ -114,8 +116,10 @@ final class MenuController: NSObject, NSMenuDelegate {
         case .switchLogin:
             sub.addItem(ClosureMenuItem(title: "Switch to this account") { [weak self] in self?.actions.switchLogin(account) })
         case .needsToken:
-            let needs = ClosureMenuItem(title: "Add a setup-token…") { [weak self] in self?.actions.editAccounts?() }
-            needs.isEnabled = actions.editAccounts != nil
+            let needs = ClosureMenuItem(title: "Add a setup-token…") { [weak self] in
+                if let getToken = self?.actions.getToken { getToken(account) } else { self?.actions.editAccounts?() }
+            }
+            needs.isEnabled = actions.getToken != nil || actions.editAccounts != nil
             sub.addItem(needs)
         }
         if row.terminalLabel == .openTerminal {

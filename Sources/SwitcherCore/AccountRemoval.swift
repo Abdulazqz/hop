@@ -12,4 +12,10 @@ public enum AccountRemoval {
         let clearPointer = active.map { !afterIDs.contains($0) } ?? false
         return (removedTokenIDs, clearPointer)
     }
+
+    /// Every account id in `before` that is gone from `after` (its browser profile goes with it).
+    public static func removedIDs(before: [Account], after: [Account]) -> [UUID] {
+        let afterIDs = Set(after.map(\.id))
+        return before.map(\.id).filter { !afterIDs.contains($0) }
+    }
 }

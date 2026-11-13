@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var switcher: SwitchController!
     private var menu: MenuController!
     private var editWindow: EditAccountsWindow!
+    private var tokenWindow: TokenFetchWindow!
     private let hotkeys = Hotkeys()
     private let hopLogin = HopLoginInstall()
 
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switcher = SwitchController(model: model)
         switcher.onChange = { [unowned self] in self.menu.rebuild() }
         editWindow = EditAccountsWindow(model: model, switcher: switcher)
+        tokenWindow = TokenFetchWindow(model: model)
         menu = MenuController(model: model, actions: MenuActions(
             open: { [unowned self] in self.launcher.open($0) },
             quit: { [unowned self] in self.launcher.quit($0) },
@@ -28,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setHotkeyAction: { [unowned self] in self.setHotkeyAction($0) },
             addAccount: { [unowned self] in self.addAccount() },
             editAccounts: { [unowned self] in self.editWindow.show() },
+            getToken: { [unowned self] in self.getToken(for: $0) },
             toggleHopLogin: { [unowned self] in self.toggleHopLogin() }
         ))
         menu.hotkeyAction = hotkeyAction
@@ -79,6 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotkeys.register(actions)
         menu.rebuild()
+    }
+
+    private func getToken(for account: Account) {
+        editWindow.close()   // an open editor would overwrite the new token marker on Save
+        tokenWindow.show(for: account)
     }
 
     private func addAccount() {

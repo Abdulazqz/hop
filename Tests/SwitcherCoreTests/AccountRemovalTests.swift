@@ -17,6 +17,11 @@ final class AccountRemovalTests: XCTestCase {
         XCTAssertTrue(clear)
     }
 
+    func testRemovedIDsIncludesAccountsWithoutTokens() {
+        let a = acct(true), b = acct(false), c = acct(true)
+        XCTAssertEqual(Set(AccountRemoval.removedIDs(before: [a, b, c], after: [a])), [b.id, c.id])
+    }
+
     func testNoClearWhenNothingActive() {
         let a = acct(true)
         let (_, clear) = AccountRemoval.cleanup(before: [a], after: [], active: nil)
